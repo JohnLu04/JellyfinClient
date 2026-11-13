@@ -112,7 +112,8 @@ struct TrailerHero: View {
             }
             .clipped()
         }
-        .task(id: item.id) { await loadTrailer() }
+        // Items opened from lists don't carry trailer info yet; re-run once the full item has loaded.
+        .task(id: trailerInfoKey) { await loadTrailer() }
         .onReceive(NotificationCenter.default.publisher(for: .playbackWillStart)) { _ in stopTrailer() }
         .onDisappear { stopTrailer() }
     }
@@ -130,8 +131,13 @@ struct TrailerHero: View {
         }
     }
 
+    private var trailerInfoKey: String {
+        "\(item.id)|\(item.remoteTrailers?.count ?? -1)|\(item.localTrailerCount ?? -1)"
+    }
+
     private func loadTrailer() async {
         guard autoplayTrailers, source == nil, !isFinished, let api = app.api else { return }
+        guard item.remoteTrailers != nil || item.localTrailerCount != nil else { return }   // wait for the full item
         // Let the page settle (and avoid loading trailers while scrolling past quickly).
         try? await Task.sleep(for: .seconds(1.2))
         guard !Task.isCancelled else { return }
