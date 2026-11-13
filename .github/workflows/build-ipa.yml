@@ -1,0 +1,64 @@
+name: Build IPA
+
+# Push a tag like v0.2.0 → builds an unsigned IPA and attaches it to the GitHub release
+# (creates the release if it doesn't exist yet).
+# "Run workflow" in the Actions tab → test build, IPA is kept as a workflow artifact only.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select newest Xcode
+        run: |
+          XCODE="$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: Build IPA
+        id: build
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION=""   # keep the version from the Xcode project
+          fi
+          IPA="$(scripts/build-ipa.sh "$VERSION" "$GITHUB_RUN_NUMBER" | tail -1)"
+          echo "ipa=$IPA" >> "$GITHUB_OUTPUT"
+          echo "sha=$(cat "$IPA.sha256")" >> "$GITHUB_OUTPUT"
+          echo "Built $IPA (SHA-256 $(cat "$IPA.sha256"))" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: JellyfinClient-ipa
+          path: build/ipa/*.ipa
+          retention-days: 14
+
+      - name: Publish to GitHub release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IPA: ${{ steps.build.outputs.ipa }}
+          SHA: ${{ steps.build.outputs.sha }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$IPA" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$IPA" \
+              --title "JellyfinClient ${GITHUB_REF_NAME#v}" \
+              --generate-notes \
+              --notes "Unsignierte IPA – Installation per AltStore, SideStore oder Sideloadly. SHA-256: \`$SHA\`"
+          fi

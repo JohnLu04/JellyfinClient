@@ -21,6 +21,14 @@ Pick an iPhone simulator or your device and press ⌘R. For a real device, selec
 
 Server-side permissions needed per user: *Allow video playback that requires transcoding* (transcoded playback/downloads) and *Allow media downloading* (original downloads).
 
+## Releases (IPA)
+
+Unsigned IPAs for sideloading (AltStore, SideStore, Sideloadly) are attached to [GitHub releases](../../releases).
+
+- **New release:** `git tag v0.2.0 && git push origin v0.2.0` – the *Build IPA* workflow builds the IPA (version taken from the tag) and creates the release.
+- **Test build:** Actions → *Build IPA* → *Run workflow*; the IPA is kept as a workflow artifact for 14 days.
+- **Locally:** `scripts/build-ipa.sh [version] [build-number]` → `build/ipa/`.
+
 ## Layout
 
 | Folder | Contents |
