@@ -188,7 +188,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
             let message = switch status {
             case 401: String(localized: "Not signed in (HTTP 401).")
             case 403: String(localized: "Your user isn't allowed to download or transcode (HTTP 403).")
-            default: "Server returned HTTP \(status)."
+            default: String(localized: "Server returned HTTP \(status).")
             }
             Task { @MainActor in self.failed(id: id, message: message) }
             return

@@ -15,13 +15,13 @@ enum APIError: LocalizedError {
             return String(localized: "Your Jellyfin user isn't allowed to do this. Ask the server admin to enable the permission (e.g. transcoding or downloads).")
         case let .http(status, message):
             let detail = message.flatMap { $0.isEmpty || $0.count > 200 ? nil : $0 }
-            return "Server error \(status)" + (detail.map { ": \($0)" } ?? "")
+            return String(localized: "Server error \(status)") + (detail.map { ": \($0)" } ?? "")
         case let .playback(code):
             switch code {
             case "NotAllowed": return String(localized: "Playback isn't allowed for this user.")
             case "NoCompatibleStream": return String(localized: "The server found no stream this iPhone can play.")
             case "RateLimitExceeded": return String(localized: "The server's streaming limit was reached.")
-            default: return "Playback error: \(code)"
+            default: return String(localized: "Playback error: \(code)")
             }
         case .noPlayableSource:
             return String(localized: "No playable media source was returned by the server.")

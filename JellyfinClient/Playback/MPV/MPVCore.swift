@@ -28,7 +28,7 @@ struct MPVTrack {
 
     var label: String {
         let parts = [title, language?.uppercased(), codec?.uppercased()].compactMap { $0 }.filter { !$0.isEmpty }
-        return parts.isEmpty ? "Track \(id)" : parts.joined(separator: " · ")
+        return parts.isEmpty ? String(localized: "Track \(id)") : parts.joined(separator: " · ")
     }
 }
 

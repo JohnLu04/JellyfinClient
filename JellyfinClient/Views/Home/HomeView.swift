@@ -74,6 +74,8 @@ struct HomeView: View {
                 .overlay {
                     if !hasLoaded {
                         ProgressView()
+                            .controlSize(.large)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if let errorMessage, libraries.isEmpty {
                         ContentUnavailableView {
                             Label("Can't reach the server", systemImage: "wifi.exclamationmark")

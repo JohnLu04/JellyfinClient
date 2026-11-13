@@ -90,7 +90,7 @@ struct MediaStream: Decodable, Identifiable, Hashable {
     var label: String {
         if let displayTitle, !displayTitle.isEmpty { return displayTitle }
         let parts = [title, language?.uppercased(), codec?.uppercased()].compactMap { $0 }.filter { !$0.isEmpty }
-        return parts.isEmpty ? "Track \(index)" : parts.joined(separator: " · ")
+        return parts.isEmpty ? String(localized: "Track \(index)") : parts.joined(separator: " · ")
     }
 
     /// Text subtitles can be delivered as separate files; image subtitles (PGS, VobSub) can't.
@@ -268,7 +268,7 @@ enum Ticks {
 
     static func durationText(_ ticks: Int64) -> String {
         let minutes = Int(seconds(ticks) / 60)
-        return minutes >= 60 ? "\(minutes / 60) h \(minutes % 60) min" : "\(max(minutes, 1)) min"
+        return minutes >= 60 ? String(localized: "\(minutes / 60) h \(minutes % 60) min") : String(localized: "\(max(minutes, 1)) min")
     }
 
     static func clockText(_ ticks: Int64) -> String {
