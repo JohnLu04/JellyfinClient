@@ -161,14 +161,10 @@ struct TitleLogo: View {
 
     var body: some View {
         if let url = app.api?.logoURL(for: item) {
-            AsyncImage(url: url) { phase in
-                if let image = phase.image {
-                    image.resizable().scaledToFit()
-                } else if phase.error != nil {
-                    titleText
-                } else {
-                    Color.clear
-                }
+            PipelineImage(url: url) { image in
+                image.resizable().scaledToFit()
+            } placeholder: { failed in
+                if failed { titleText } else { Color.clear }
             }
             .frame(maxHeight: maxHeight)
             .shadow(color: .black.opacity(0.4), radius: 6)

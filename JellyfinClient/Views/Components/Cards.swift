@@ -8,16 +8,11 @@ struct RemoteImage: View {
         Rectangle()
             .fill(Color.secondary.opacity(0.15))
             .overlay {
-                if let url {
-                    AsyncImage(url: url, transaction: Transaction(animation: .easeIn(duration: 0.2))) { phase in
-                        if let image = phase.image {
-                            image.resizable().scaledToFill()
-                        } else if phase.error != nil {
-                            placeholder
-                        }
-                    }
-                } else {
-                    placeholder
+                PipelineImage(url: url) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: { failed in
+                    // Only show the symbol when there's no artwork at all; while loading stay a calm grey tile.
+                    if failed { placeholder }
                 }
             }
             .clipped()
