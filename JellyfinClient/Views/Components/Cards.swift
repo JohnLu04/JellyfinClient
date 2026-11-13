@@ -77,32 +77,33 @@ struct PosterCard: View {
     }
 }
 
-struct LandscapeCard: View {
+/// "Continue Watching" card: poster format; episodes show their series' poster.
+struct ContinueWatchingCard: View {
     @Environment(AppModel.self) private var app
     let item: BaseItem
-    var width: CGFloat = 250
+    var width: CGFloat = 130
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            RemoteImage(url: app.api?.backdropURL(for: item, maxWidth: 600))
-                .frame(width: width, height: width * 9 / 16)
+            RemoteImage(url: app.api?.seriesOrItemPosterURL(for: item, maxWidth: 360),
+                        placeholderSymbol: item.type == "Episode" ? "tv" : "film")
+                .frame(width: width, height: width * 3 / 2)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .overlay(alignment: .bottom) { if let f = item.progressFraction { WatchProgressBar(fraction: f) } }
             Text(item.seriesName ?? item.name ?? "")
-                .font(.subheadline.weight(.medium))
+                .font(.caption.weight(.medium))
                 .lineLimit(1)
             Text(subtitle)
-                .font(.caption)
+                .font(.caption2)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
         .frame(width: width, alignment: .leading)
     }
 
+    /// Episodes: "S1 · E3"; movies: year.
     private var subtitle: String {
-        if item.type == "Episode" {
-            return [item.episodeLabel, item.name].compactMap { $0 }.joined(separator: " – ")
-        }
+        if item.type == "Episode" { return item.episodeLabel ?? item.name ?? "" }
         return item.productionYear.map(String.init) ?? ""
     }
 }

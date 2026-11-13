@@ -220,6 +220,14 @@ struct JellyfinAPI {
         item.imageTag("Primary").map { imageURL(itemId: item.id, type: "Primary", tag: $0, maxWidth: maxWidth) }
     }
 
+    /// Poster for rows that mix movies and episodes: episodes show their series' poster instead of the episode still.
+    func seriesOrItemPosterURL(for item: BaseItem, maxWidth: Int = 300) -> URL? {
+        if item.type == "Episode", let seriesId = item.seriesId {
+            return imageURL(itemId: seriesId, type: "Primary", tag: item.seriesPrimaryImageTag, maxWidth: maxWidth)
+        }
+        return posterURL(for: item, maxWidth: maxWidth)
+    }
+
     /// Landscape artwork: own backdrop, then parent's backdrop, then thumb, then primary.
     func backdropURL(for item: BaseItem, maxWidth: Int = 1280) -> URL? {
         if item.type == "Episode", let tag = item.imageTag("Primary") {

@@ -17,7 +17,7 @@ struct HomeView: View {
                             ScrollView(.horizontal, showsIndicators: false) {
                                 LazyHStack(alignment: .top, spacing: 12) {
                                     ForEach(resume) { item in
-                                        NavigationLink(value: item) { LandscapeCard(item: item) }
+                                        NavigationLink(value: item) { ContinueWatchingCard(item: item) }
                                             .buttonStyle(.plain)
                                     }
                                 }

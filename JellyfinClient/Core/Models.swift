@@ -137,6 +137,7 @@ struct BaseItem: Decodable, Identifiable, Hashable {
     let parentBackdropImageTags: [String]?
     let parentThumbItemId: String?
     let parentThumbImageTag: String?
+    let seriesPrimaryImageTag: String?
     let userData: UserItemData?
     let mediaSources: [MediaSourceInfo]?
 
