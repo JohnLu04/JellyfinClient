@@ -64,15 +64,18 @@ final class MPVPlayerController: PlaybackEngine {
     @ObservationIgnored private var addedSubtitles: [Int: Int] = [:]   // Jellyfin index → mpv track id
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private var lifecycleObservers: [NSObjectProtocol] = []
-    @ObservationIgnored private var subtitleScale: Double = 1
-    @ObservationIgnored private var lastRenderSize: CGSize?
-    @ObservationIgnored private var resizeTask: Task<Void, Never>?
 
     init(title: String, url: URL, startSeconds: Double, session: PlaybackSession?) {
         self.title = title
         self.url = url
         self.startSeconds = startSeconds
         self.session = session
+        let video = session?.source.mediaStreams?.first { $0.type == "Video" }
+        if let width = video?.width, let height = video?.height, width > 0, height > 0 {
+            videoAspect = Double(width) / Double(height)
+        } else {
+            videoAspect = 16.0 / 9.0
+        }
         layer.framebufferOnly = true
         layer.backgroundColor = UIColor.black.cgColor
         if let session {
@@ -95,34 +98,14 @@ final class MPVPlayerController: PlaybackEngine {
             MainActor.assumeIsolated { self?.handle(event) }
         }
         observeLifecycle()
-        core.setString("sub-scale", String(format: "%.2f", subtitleScale))
         load(url, from: startSeconds)
     }
 
-    /// mpv on iOS only reads the output size when its video output is (re)configured, so after a real
-    /// size change (rotation) re-create the output; otherwise the old-sized picture sits in a corner.
-    func renderSizeChanged(to size: CGSize) {
-        guard size.width > 1, size.height > 1 else { return }
-        defer { lastRenderSize = size }
-        guard let last = lastRenderSize, core != nil,
-              abs(last.width - size.width) > 1 || abs(last.height - size.height) > 1 else { return }
-        resizeTask?.cancel()
-        resizeTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(250))     // let the rotation animation settle
-            guard let self, !Task.isCancelled, let core = self.core else { return }
-            let videoTrack = core.getString("vid") ?? "auto"
-            core.setString("vid", "no")
-            core.setString("vid", videoTrack == "no" ? "auto" : videoTrack)
-        }
-    }
-
-    /// mpv scales subtitles with the window height, which makes them huge in portrait. Shrink them there.
-    func updateSubtitleScale(for size: CGSize) {
-        guard size.width > 1, size.height > 1 else { return }
-        let scale = min(1, max(0.45, (size.width / size.height) / (16.0 / 9.0)))
-        subtitleScale = scale
-        core?.setString("sub-scale", String(format: "%.2f", scale))
-    }
+    /// Display aspect ratio of the video. mpv renders into a surface of exactly this shape, so the
+    /// picture fills it without bars and rotating only rescales the finished surface (see MPVLayerHostView).
+    @ObservationIgnored private(set) var videoAspect: Double
+    /// Called when mpv reports a different aspect than expected; the view then re-lays out the surface.
+    @ObservationIgnored var onVideoAspectChange: (() -> Void)?
 
     // MARK: - Controls
 
@@ -199,6 +182,8 @@ final class MPVPlayerController: PlaybackEngine {
                 // mpv reports every frame; ~5 updates per second are plenty for the UI and keep it responsive.
                 if abs(seconds - position) >= 0.2 { position = seconds }
                 if isBuffering && !isSwitching { isBuffering = false }
+            case let ("video-params/aspect", .double(aspect)):
+                adoptVideoAspect(aspect)
             case let ("duration", .double(seconds)):
                 duration = seconds
             case let ("pause", .flag(paused)):
@@ -232,6 +217,18 @@ final class MPVPlayerController: PlaybackEngine {
                 errorMessage = String(localized: "Playback failed: \(error)")
             }
         }
+    }
+
+    /// Only needed when the guessed aspect was wrong (local files, anamorphic video): resize the surface
+    /// once and let mpv set up its output again. Happens right at the start, never on rotation.
+    private func adoptVideoAspect(_ aspect: Double) {
+        guard aspect.isFinite, aspect > 0.1, abs(aspect - videoAspect) / videoAspect > 0.02 else { return }
+        debugLog("video aspect \(videoAspect) -> \(aspect)")
+        videoAspect = aspect
+        onVideoAspectChange?()
+        guard let core, let track = core.getString("vid"), track != "no" else { return }
+        core.setString("vid", "no")
+        core.setString("vid", track)
     }
 
     // MARK: - Tracks

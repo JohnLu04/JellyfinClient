@@ -16,27 +16,70 @@ struct MPVVideoView: UIViewRepresentable {
     func updateUIView(_ uiView: MPVLayerHostView, context: Context) {}
 }
 
+/// Shows mpv's Metal layer.
+///
+/// mpv's iOS output only picks up a new surface size when it rebuilds its video output, which would
+/// interrupt playback on every rotation. So mpv always renders into a fixed surface: the video's aspect
+/// ratio at the screen's full landscape resolution. Fitting it into the view is done with a scale
+/// transform, which Core Animation animates together with the rotation – mpv never notices.
 final class MPVLayerHostView: UIView {
-    weak var controller: MPVPlayerController?
+    weak var controller: MPVPlayerController? {
+        didSet {
+            controller?.onVideoAspectChange = { [weak self] in
+                self?.setNeedsLayout()
+                self?.layoutIfNeeded()
+            }
+        }
+    }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        guard let controller else { return }
-        let scale = window?.screen.nativeScale ?? traitCollection.displayScale
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        controller.layer.frame = bounds
-        controller.layer.contentsScale = scale
-        // Once MoltenVK has created its swapchain the layer no longer resizes its drawable by itself.
-        // mpv reads the drawable size to size its output, so set it explicitly (e.g. after rotating),
-        // otherwise the old portrait-sized picture ends up in a corner of the landscape screen.
-        if bounds.width > 1 && bounds.height > 1 {
-            controller.layer.drawableSize = CGSize(width: bounds.width * scale, height: bounds.height * scale)
+        guard let controller, bounds.width > 1, bounds.height > 1 else { return }
+        let metal = controller.layer
+        let screen = window?.windowScene?.screen
+        let scale = screen?.nativeScale ?? traitCollection.displayScale
+        let surface = Self.surfaceSize(aspect: controller.videoAspect, screen: screen, scale: scale)
+
+        // The surface itself never animates: a new size only happens before or right at the start.
+        if metal.bounds.size != surface.points {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            metal.contentsScale = scale
+            metal.bounds = CGRect(origin: .zero, size: surface.points)
+            metal.drawableSize = surface.pixels
+            CATransaction.commit()
         }
+
+        // Follow the rotation animation, if one is running, so the picture turns smoothly with the screen.
+        let fit = min(bounds.width / surface.points.width, bounds.height / surface.points.height)
+        let running = layer.animation(forKey: "bounds.size") ?? layer.animation(forKey: "bounds")
+        CATransaction.begin()
+        if let running {
+            CATransaction.setAnimationDuration(running.duration)
+            CATransaction.setAnimationTimingFunction(running.timingFunction)
+        } else {
+            CATransaction.setDisableActions(true)
+        }
+        metal.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        metal.setAffineTransform(CGAffineTransform(scaleX: fit, y: fit))
         CATransaction.commit()
-        controller.updateSubtitleScale(for: bounds.size)
-        controller.renderSizeChanged(to: bounds.size)
-        if bounds.width > 1 && bounds.height > 1 { controller.startIfNeeded() }
+
+        controller.startIfNeeded()
+    }
+
+    /// The video's aspect ratio fitted into the screen's landscape pixel size.
+    private static func surfaceSize(aspect: Double, screen: UIScreen?, scale: CGFloat) -> (points: CGSize, pixels: CGSize) {
+        let native = screen?.nativeBounds.size ?? CGSize(width: 1080, height: 1920)
+        let long = max(native.width, native.height)
+        let short = min(native.width, native.height)
+        var width = long
+        var height = (long / aspect).rounded()
+        if height > short {
+            height = short
+            width = (short * aspect).rounded()
+        }
+        let pixels = CGSize(width: max(width, 2), height: max(height, 2))
+        return (CGSize(width: pixels.width / scale, height: pixels.height / scale), pixels)
     }
 }
 

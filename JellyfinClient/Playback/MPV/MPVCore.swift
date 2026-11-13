@@ -70,6 +70,7 @@ final class MPVCore: @unchecked Sendable {
     private static let observed: [(String, mpv_format)] = [
         ("time-pos", MPV_FORMAT_DOUBLE),
         ("duration", MPV_FORMAT_DOUBLE),
+        ("video-params/aspect", MPV_FORMAT_DOUBLE),
         ("pause", MPV_FORMAT_FLAG),
         ("paused-for-cache", MPV_FORMAT_FLAG),
         ("track-list/count", MPV_FORMAT_INT64),
