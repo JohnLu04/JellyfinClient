@@ -27,6 +27,13 @@ final class PlaybackCoordinator {
                 startSeconds: Ticks.seconds(startTicks), session: session)
     }
 
+    /// Plays with the default streaming quality and the server's default audio/subtitle tracks.
+    func playWithDefaults(_ item: BaseItem, api: JellyfinAPI, fromStart: Bool = false) async throws {
+        let mbit = UserDefaults.standard.double(forKey: SettingsKeys.streamingMbit)
+        try await play(item: item, api: api, maxMbit: mbit, startTicks: fromStart ? 0 : item.resumeTicks,
+                       selection: .defaults(for: item.primaryMediaSource))
+    }
+
     func playLocal(fileURL: URL, title: String) {
         stop()
         present(player: PlayerKind.current, url: fileURL, title: title, startSeconds: 0, session: nil)
@@ -75,6 +82,7 @@ final class PlaybackCoordinator {
     // MARK: - Presentation
 
     private func present(player: PlayerKind, url: URL, title: String, startSeconds: Double, session: PlaybackSession?) {
+        NotificationCenter.default.post(name: .playbackWillStart, object: nil)
         let controller: UIViewController
         switch player {
         case .native:

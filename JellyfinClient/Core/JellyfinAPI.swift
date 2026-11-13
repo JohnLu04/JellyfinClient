@@ -77,7 +77,7 @@ struct JellyfinAPI {
         return URLSession(configuration: config)
     }()
 
-    static let listFields = "PrimaryImageAspectRatio,Overview,MediaSources"
+    static let listFields = "PrimaryImageAspectRatio,Overview,MediaSources,Genres"
 
     let baseURL: URL
     var accessToken: String?
@@ -203,11 +203,53 @@ struct JellyfinAPI {
         return result.items
     }
 
-    func episodes(seriesId: String, seasonId: String) async throws -> [BaseItem] {
+    func episodes(seriesId: String, seasonId: String? = nil) async throws -> [BaseItem] {
         let result: ItemsResult = try await get("Shows/\(seriesId)/Episodes", [
             "userId": userId, "seasonId": seasonId, "fields": Self.listFields,
         ])
         return result.items
+    }
+
+    /// Next episodes to watch, across all series or for one series.
+    /// - Parameter includeResumable: also return partly watched episodes (off for the home row,
+    ///   where those already appear under "Continue Watching").
+    func nextUp(seriesId: String? = nil, limit: Int = 20, includeResumable: Bool = true) async throws -> [BaseItem] {
+        let result: ItemsResult = try await get("Shows/NextUp", [
+            "userId": userId, "seriesId": seriesId, "limit": String(limit), "fields": Self.listFields,
+            "enableResumable": includeResumable ? "true" : "false",
+        ])
+        return result.items
+    }
+
+    /// The episode a series' play button should start: next up, otherwise the first regular episode.
+    func episodeToPlay(seriesId: String) async throws -> BaseItem? {
+        if let next = try await nextUp(seriesId: seriesId, limit: 1).first { return next }
+        let all = try await episodes(seriesId: seriesId)
+        return all.first { ($0.parentIndexNumber ?? 1) > 0 } ?? all.first
+    }
+
+    /// Newest additions to a library (`/Items/Latest` returns a plain array).
+    func latest(parentId: String, limit: Int = 16) async throws -> [BaseItem] {
+        try await get("Items/Latest", [
+            "userId": userId, "parentId": parentId, "limit": String(limit),
+            "fields": "PrimaryImageAspectRatio,Overview,Genres", "groupItems": "true",
+        ])
+    }
+
+    func similar(itemId: String, limit: Int = 12) async throws -> [BaseItem] {
+        let result: ItemsResult = try await get("Items/\(itemId)/Similar", [
+            "userId": userId, "limit": String(limit), "fields": "PrimaryImageAspectRatio",
+        ])
+        return result.items
+    }
+
+    func localTrailers(itemId: String) async throws -> [BaseItem] {
+        try await get("Items/\(itemId)/LocalTrailers", ["userId": userId])
+    }
+
+    @discardableResult
+    func setFavorite(itemId: String, _ favorite: Bool) async throws -> UserItemData {
+        try await send(favorite ? "POST" : "DELETE", "UserFavoriteItems/\(itemId)", query: ["userId": userId])
     }
 
     // MARK: - Images
@@ -226,6 +268,49 @@ struct JellyfinAPI {
             return imageURL(itemId: seriesId, type: "Primary", tag: item.seriesPrimaryImageTag, maxWidth: maxWidth)
         }
         return posterURL(for: item, maxWidth: maxWidth)
+    }
+
+    /// Title logo (transparent PNG): the item's own, or the series' logo for episodes.
+    func logoURL(for item: BaseItem, maxWidth: Int = 600) -> URL? {
+        if let tag = item.imageTag("Logo") {
+            return imageURL(itemId: item.id, type: "Logo", tag: tag, maxWidth: maxWidth)
+        }
+        if let parent = item.parentLogoItemId, let tag = item.parentLogoImageTag {
+            return imageURL(itemId: parent, type: "Logo", tag: tag, maxWidth: maxWidth)
+        }
+        return nil
+    }
+
+    /// Big hero artwork: the item's (or its series') backdrop, never an episode still.
+    func heroBackdropURL(for item: BaseItem, maxWidth: Int = 1920) -> URL? {
+        if let tag = item.backdropImageTags?.first {
+            return imageURL(itemId: item.id, type: "Backdrop", tag: tag, maxWidth: maxWidth)
+        }
+        if let parent = item.parentBackdropItemId, let tag = item.parentBackdropImageTags?.first {
+            return imageURL(itemId: parent, type: "Backdrop", tag: tag, maxWidth: maxWidth)
+        }
+        return posterURL(for: item, maxWidth: maxWidth)
+    }
+
+    /// Landscape series/movie artwork for "Continue Watching" (no episode stills).
+    /// `needsLogo` is true when the art is a plain backdrop, so the caller should overlay the title logo.
+    func landscapeArt(for item: BaseItem, maxWidth: Int = 800) -> (url: URL?, needsLogo: Bool) {
+        if item.type == "Episode" {
+            if let parent = item.parentThumbItemId, let tag = item.parentThumbImageTag {
+                return (imageURL(itemId: parent, type: "Thumb", tag: tag, maxWidth: maxWidth), false)
+            }
+            if let parent = item.parentBackdropItemId, let tag = item.parentBackdropImageTags?.first {
+                return (imageURL(itemId: parent, type: "Backdrop", tag: tag, maxWidth: maxWidth), true)
+            }
+            return (seriesOrItemPosterURL(for: item, maxWidth: maxWidth), false)
+        }
+        if let tag = item.imageTag("Thumb") {
+            return (imageURL(itemId: item.id, type: "Thumb", tag: tag, maxWidth: maxWidth), false)
+        }
+        if let tag = item.backdropImageTags?.first {
+            return (imageURL(itemId: item.id, type: "Backdrop", tag: tag, maxWidth: maxWidth), true)
+        }
+        return (posterURL(for: item, maxWidth: maxWidth), false)
     }
 
     /// Landscape artwork: own backdrop, then parent's backdrop, then thumb, then primary.

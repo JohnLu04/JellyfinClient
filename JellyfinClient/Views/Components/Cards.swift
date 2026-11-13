@@ -77,33 +77,49 @@ struct PosterCard: View {
     }
 }
 
-/// "Continue Watching" card: poster format; episodes show their series' poster.
+/// "Continue Watching" / "Next Up" card: wide series or movie artwork (never the episode still),
+/// with the title logo on plain backdrops and a progress bar.
 struct ContinueWatchingCard: View {
     @Environment(AppModel.self) private var app
     let item: BaseItem
-    var width: CGFloat = 130
+    var width: CGFloat = 280
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            RemoteImage(url: app.api?.seriesOrItemPosterURL(for: item, maxWidth: 360),
-                        placeholderSymbol: item.type == "Episode" ? "tv" : "film")
-                .frame(width: width, height: width * 3 / 2)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .overlay(alignment: .bottom) { if let f = item.progressFraction { WatchProgressBar(fraction: f) } }
+        let art = app.api?.landscapeArt(for: item) ?? (url: nil, needsLogo: false)
+        VStack(alignment: .leading, spacing: 6) {
+            ZStack(alignment: .bottom) {
+                RemoteImage(url: art.url, placeholderSymbol: item.type == "Episode" ? "tv" : "film")
+                if art.needsLogo {
+                    LinearGradient(colors: [.clear, .black.opacity(0.55)], startPoint: .center, endPoint: .bottom)
+                    TitleLogo(item: item, maxHeight: 44)
+                        .frame(maxWidth: width * 0.6)
+                        .padding(.bottom, 16)
+                }
+                if let fraction = item.progressFraction { WatchProgressBar(fraction: fraction) }
+            }
+            .frame(width: width, height: width * 9 / 16)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+
             Text(item.seriesName ?? item.name ?? "")
-                .font(.caption.weight(.medium))
+                .font(.subheadline.weight(.semibold))
                 .lineLimit(1)
             Text(subtitle)
-                .font(.caption2)
+                .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
         .frame(width: width, alignment: .leading)
     }
 
-    /// Episodes: "S1 · E3"; movies: year.
+    /// Episodes: "S1 · E3 · Title"; movies: time left or year.
     private var subtitle: String {
-        if item.type == "Episode" { return item.episodeLabel ?? item.name ?? "" }
+        if item.type == "Episode" {
+            return [item.shortEpisodeLabel, item.name].compactMap { $0 }.joined(separator: " · ")
+        }
+        if let total = item.runTimeTicks, item.resumeTicks > 0 {
+            let minutes = max(1, Int(Ticks.seconds(total - item.resumeTicks) / 60))
+            return String(localized: "\(minutes) min left")
+        }
         return item.productionYear.map(String.init) ?? ""
     }
 }
@@ -143,8 +159,7 @@ struct ItemRouter: View {
 
     var body: some View {
         switch item.kind {
-        case .playable: ItemDetailView(item: item)
-        case .series: SeriesView(series: item)
+        case .playable, .series: MediaDetailView(item: item)
         case .folder: LibraryItemsView(parent: item)
         case .unsupported:
             ContentUnavailableView("Not supported yet", systemImage: "questionmark.square.dashed",

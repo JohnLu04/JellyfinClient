@@ -5,7 +5,9 @@ Native SwiftUI client for [Jellyfin](https://jellyfin.org) servers (10.9+). iOS 
 ## Features
 
 - **Login** – server address (`192.168.1.10:8096`, `https://…`, pasted web URL), username/password; session token stored in the Keychain.
-- **Browsing** – Continue Watching, libraries (movies, shows, folders), posters with paging, series → seasons → episodes, watched/progress badges.
+- **Home** – full-width hero carousel (artwork, title logo, genres, age rating, "Play S3 · E2", My List), Continue Watching and Next Up with series artwork, Recently Added per library, libraries.
+- **Title pages** (movies, series, episodes) – muted inline trailer in the header (German trailers preferred; YouTube via embedded player or local trailer files), Play/Resume and Download, description, cast, My List, Share (IMDb link), audio & quality options, Download Season, Episodes / More Like This tabs.
+- **Browsing** – libraries (movies, shows, folders), posters with paging, watched/progress badges.
 - **Two players, switchable any time in Settings:**
   - **mpv** (default, via [MPVKit](https://github.com/mpvkit/MPVKit), LGPL) – plays almost every format directly (MKV, HEVC, AV1, DTS, PGS …). In-player menus for **all audio tracks and subtitles**: embedded tracks switch instantly, external/text subtitles are loaded from the server, and while transcoding a switch fetches a new stream at the current position.
   - **Apple player** (AVPlayer) – PiP and AirPlay; anything the iPhone can't play natively is transcoded by the server.

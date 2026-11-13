@@ -6,6 +6,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.streamingMbit) private var streamingMbit = 0.0
     @AppStorage(SettingsKeys.downloadMbit) private var downloadMbit = 4.0
     @AppStorage(SettingsKeys.videoPlayer) private var videoPlayer = PlayerKind.defaultKind.rawValue
+    @AppStorage(SettingsKeys.autoplayTrailers) private var autoplayTrailers = true
     @State private var confirmSignOut = false
 
     private var selectedPlayer: PlayerKind { PlayerKind(rawValue: videoPlayer) ?? .defaultKind }
@@ -31,6 +32,12 @@ struct SettingsView: View {
                     Text("Video Player")
                 } footer: {
                     Text(selectedPlayer.summary)
+                }
+
+                Section {
+                    Toggle("Autoplay Trailers", isOn: $autoplayTrailers)
+                } footer: {
+                    Text("Plays a muted trailer at the top of movie and series pages, preferring German trailers.")
                 }
 
                 Section {

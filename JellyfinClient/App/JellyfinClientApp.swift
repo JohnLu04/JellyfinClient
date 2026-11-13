@@ -32,6 +32,7 @@ struct RootView: View {
             }
         }
         .animation(.default, value: app.session)
+        .preferredColorScheme(.dark)
     }
 }
 

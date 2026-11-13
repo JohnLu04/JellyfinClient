@@ -30,6 +30,17 @@ struct ItemsResult: Decodable {
     let totalRecordCount: Int?
 }
 
+struct Person: Decodable, Hashable {
+    let name: String?
+    let role: String?
+    let type: String?
+}
+
+struct RemoteTrailer: Decodable, Hashable {
+    let url: String?
+    let name: String?
+}
+
 struct UserItemData: Decodable {
     let playbackPositionTicks: Int64?
     let playedPercentage: Double?
@@ -71,6 +82,8 @@ struct MediaStream: Decodable, Identifiable, Hashable {
     let deliveryMethod: String?
     let deliveryUrl: String?
     let channels: Int?
+    let width: Int?
+    let height: Int?
 
     var id: Int { index }
 
@@ -138,6 +151,15 @@ struct BaseItem: Decodable, Identifiable, Hashable {
     let parentThumbItemId: String?
     let parentThumbImageTag: String?
     let seriesPrimaryImageTag: String?
+    let parentLogoItemId: String?
+    let parentLogoImageTag: String?
+    let genres: [String]?
+    let people: [Person]?
+    let providerIds: [String: String]?
+    let remoteTrailers: [RemoteTrailer]?
+    let localTrailerCount: Int?
+    let childCount: Int?
+    let premiereDate: String?
     let userData: UserItemData?
     let mediaSources: [MediaSourceInfo]?
 
@@ -189,6 +211,53 @@ extension BaseItem {
     }
 
     var primaryMediaSource: MediaSourceInfo? { mediaSources?.first }
+
+    var isFavorite: Bool { userData?.isFavorite == true }
+
+    /// Provider id lookup that ignores key casing ("Imdb", "Tmdb", …).
+    func providerID(_ name: String) -> String? {
+        providerIds?.first { $0.key.caseInsensitiveCompare(name) == .orderedSame }?.value
+    }
+
+    /// Link for the share button: the IMDb page, falling back to TMDb.
+    var shareURL: URL? {
+        if let imdb = providerID("Imdb"), !imdb.isEmpty {
+            return URL(string: "https://www.imdb.com/title/\(imdb)/")
+        }
+        if let tmdb = providerID("Tmdb"), !tmdb.isEmpty {
+            return URL(string: "https://www.themoviedb.org/\(type == "Series" ? "tv" : "movie")/\(tmdb)")
+        }
+        return nil
+    }
+
+    var castNames: [String] {
+        (people ?? []).filter { $0.type == "Actor" }.compactMap(\.name)
+    }
+
+    /// Directors, or writers/creators when there's no director (common for series).
+    var creatorNames: [String] {
+        let all = people ?? []
+        let directors = all.filter { $0.type == "Director" }.compactMap(\.name)
+        if !directors.isEmpty { return directors }
+        return all.filter { $0.type == "Writer" || $0.type == "Creator" }.compactMap(\.name)
+    }
+
+    /// "4K" / "HD" based on the main video stream.
+    var videoQualityBadge: String? {
+        guard let video = primaryMediaSource?.mediaStreams?.first(where: { $0.type == "Video" }),
+              let width = video.width else { return nil }
+        if width >= 3800 { return "4K" }
+        if width >= 1260 { return "HD" }
+        return nil
+    }
+
+    var hasSubtitles: Bool { !(primaryMediaSource?.subtitleStreams.isEmpty ?? true) }
+
+    /// "S3 · E2"-style label for the play button of a series.
+    var shortEpisodeLabel: String? {
+        guard let season = parentIndexNumber, let episode = indexNumber else { return episodeLabel }
+        return "S\(season) · E\(episode)"
+    }
 }
 
 enum Ticks {
@@ -212,4 +281,6 @@ enum Ticks {
 extension Notification.Name {
     /// Posted when the player closes, so screens can refresh resume positions.
     static let playbackDidStop = Notification.Name("JellyfinClient.playbackDidStop")
+    /// Posted right before a player opens, so inline trailers can stop.
+    static let playbackWillStart = Notification.Name("JellyfinClient.playbackWillStart")
 }
