@@ -65,6 +65,8 @@ final class MPVPlayerController: PlaybackEngine {
     @ObservationIgnored private var didStart = false
     @ObservationIgnored private var lifecycleObservers: [NSObjectProtocol] = []
     @ObservationIgnored private var subtitleScale: Double = 1
+    @ObservationIgnored private var lastRenderSize: CGSize?
+    @ObservationIgnored private var resizeTask: Task<Void, Never>?
 
     init(title: String, url: URL, startSeconds: Double, session: PlaybackSession?) {
         self.title = title
@@ -95,6 +97,23 @@ final class MPVPlayerController: PlaybackEngine {
         observeLifecycle()
         core.setString("sub-scale", String(format: "%.2f", subtitleScale))
         load(url, from: startSeconds)
+    }
+
+    /// mpv on iOS only reads the output size when its video output is (re)configured, so after a real
+    /// size change (rotation) re-create the output; otherwise the old-sized picture sits in a corner.
+    func renderSizeChanged(to size: CGSize) {
+        guard size.width > 1, size.height > 1 else { return }
+        defer { lastRenderSize = size }
+        guard let last = lastRenderSize, core != nil,
+              abs(last.width - size.width) > 1 || abs(last.height - size.height) > 1 else { return }
+        resizeTask?.cancel()
+        resizeTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))     // let the rotation animation settle
+            guard let self, !Task.isCancelled, let core = self.core else { return }
+            let videoTrack = core.getString("vid") ?? "auto"
+            core.setString("vid", "no")
+            core.setString("vid", videoTrack == "no" ? "auto" : videoTrack)
+        }
     }
 
     /// mpv scales subtitles with the window height, which makes them huge in portrait. Shrink them there.
@@ -177,7 +196,8 @@ final class MPVPlayerController: PlaybackEngine {
         case let .property(name, value):
             switch (name, value) {
             case let ("time-pos", .double(seconds)):
-                position = seconds
+                // mpv reports every frame; ~5 updates per second are plenty for the UI and keep it responsive.
+                if abs(seconds - position) >= 0.2 { position = seconds }
                 if isBuffering && !isSwitching { isBuffering = false }
             case let ("duration", .double(seconds)):
                 duration = seconds

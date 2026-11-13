@@ -22,12 +22,20 @@ final class MPVLayerHostView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         guard let controller else { return }
+        let scale = window?.screen.nativeScale ?? traitCollection.displayScale
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         controller.layer.frame = bounds
-        controller.layer.contentsScale = traitCollection.displayScale
+        controller.layer.contentsScale = scale
+        // Once MoltenVK has created its swapchain the layer no longer resizes its drawable by itself.
+        // mpv reads the drawable size to size its output, so set it explicitly (e.g. after rotating),
+        // otherwise the old portrait-sized picture ends up in a corner of the landscape screen.
+        if bounds.width > 1 && bounds.height > 1 {
+            controller.layer.drawableSize = CGSize(width: bounds.width * scale, height: bounds.height * scale)
+        }
         CATransaction.commit()
         controller.updateSubtitleScale(for: bounds.size)
+        controller.renderSizeChanged(to: bounds.size)
         if bounds.width > 1 && bounds.height > 1 { controller.startIfNeeded() }
     }
 }
@@ -37,8 +45,11 @@ struct MPVPlayerView: View {
     let onClose: () -> Void
 
     @State private var showControls = true
-    @State private var scrubPosition: Double?
+    @State private var isScrubbing = false
+    /// True while the user is in a track menu, so the controls (and the open menu) don't auto-hide.
+    @State private var holdControls = false
     @State private var hideTask: Task<Void, Never>?
+    @State private var showTracks = false
 
     var body: some View {
         ZStack {
@@ -59,6 +70,10 @@ struct MPVPlayerView: View {
             if showControls || controller.errorMessage != nil {
                 controls
                     .transition(.opacity)
+            }
+
+            if showTracks && controller.errorMessage == nil {
+                tracksPanel
             }
 
             if let error = controller.errorMessage {
@@ -82,8 +97,7 @@ struct MPVPlayerView: View {
                     .font(.headline)
                     .lineLimit(1)
                 Spacer()
-                audioMenu
-                subtitleMenu
+                tracksButton
             }
             .padding(.horizontal)
             .padding(.top, 8)
@@ -99,28 +113,10 @@ struct MPVPlayerView: View {
 
             Spacer()
 
-            VStack(spacing: 4) {
-                Slider(
-                    value: Binding(get: { scrubPosition ?? controller.position },
-                                   set: { scrubPosition = $0 }),
-                    in: 0...max(controller.duration, 1)
-                ) { editing in
-                    if editing {
-                        hideTask?.cancel()
-                    } else {
-                        if let target = scrubPosition { controller.seek(to: target) }
-                        scrubPosition = nil
-                        scheduleHide()
-                    }
-                }
-                .tint(.white)
-                HStack {
-                    Text(timeText(scrubPosition ?? controller.position))
-                    Spacer()
-                    Text("−" + timeText(max(controller.duration - (scrubPosition ?? controller.position), 0)))
-                }
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.white.opacity(0.8))
+            // Separate view: only the seek bar re-renders as the time advances, not the menus above.
+            MPVScrubBar(controller: controller) { scrubbing in
+                isScrubbing = scrubbing
+                if scrubbing { hideTask?.cancel() } else { scheduleHide() }
             }
             .padding(.horizontal)
             .padding(.bottom, 8)
@@ -134,45 +130,102 @@ struct MPVPlayerView: View {
         }
     }
 
-    private var audioMenu: some View {
-        Menu {
-            Picker("Audio", selection: Binding(
-                get: { controller.selectedAudio ?? -1 },
-                set: { controller.selectAudio($0); scheduleHide() }
-            )) {
-                ForEach(controller.audioOptions) { option in
-                    Text(option.label).tag(option.id)
-                }
-            }
+    /// One large button for both track lists. A plain Button opens our own panel: SwiftUI `Menu`s
+    /// inside the auto-hiding overlay often swallowed taps or closed again right away.
+    private var tracksButton: some View {
+        Button {
+            hideTask?.cancel()
+            holdControls = true
+            withAnimation(.easeOut(duration: 0.2)) { showTracks = true }
         } label: {
-            menuLabel("waveform.circle", text: "Audio")
+            Image(systemName: controller.selectedSubtitle == nil ? "captions.bubble" : "captions.bubble.fill")
+                .font(.title3.weight(.semibold))
+                .frame(width: 48, height: 48)
+                .background(.ultraThinMaterial, in: Circle())
+                .contentShape(Circle())
         }
-        .disabled(controller.audioOptions.isEmpty || controller.isSwitching)
+        .accessibilityLabel("Audio & Subtitles")
+        .disabled((controller.audioOptions.isEmpty && controller.subtitleOptions.isEmpty) || controller.isSwitching)
     }
 
-    private var subtitleMenu: some View {
-        Menu {
-            Picker("Subtitles", selection: Binding(
-                get: { controller.selectedSubtitle ?? -1 },
-                set: { controller.selectSubtitle($0 < 0 ? nil : $0); scheduleHide() }
-            )) {
-                Text("Off").tag(-1)
-                ForEach(controller.subtitleOptions) { option in
-                    Text(option.label).tag(option.id)
+    private var tracksPanel: some View {
+        ZStack {
+            Color.black.opacity(0.55)
+                .ignoresSafeArea()
+                .onTapGesture { closeTracks() }
+
+            VStack(spacing: 0) {
+                HStack {
+                    Text("Audio & Subtitles")
+                        .font(.headline)
+                    Spacer()
+                    Button("Done") { closeTracks() }
+                        .font(.headline)
+                        .padding(.vertical, 8)
+                        .contentShape(Rectangle())
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+
+                Divider().overlay(.white.opacity(0.2))
+
+                HStack(alignment: .top, spacing: 0) {
+                    trackColumn("Audio",
+                                options: controller.audioOptions.map { ($0.id, $0.label) },
+                                selected: controller.selectedAudio) { controller.selectAudio($0) }
+                    Divider().overlay(.white.opacity(0.2))
+                    trackColumn("Subtitles",
+                                options: [(-1, String(localized: "Off"))] + controller.subtitleOptions.map { ($0.id, $0.label) },
+                                selected: controller.selectedSubtitle ?? -1) { id in
+                        controller.selectSubtitle(id < 0 ? nil : id)
+                    }
                 }
             }
-        } label: {
-            menuLabel(controller.selectedSubtitle == nil ? "captions.bubble" : "captions.bubble.fill", text: "Subtitles")
+            .foregroundStyle(.white)
+            .frame(maxWidth: 640, maxHeight: 420)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
+            .environment(\.colorScheme, .dark)
+            .padding(16)
         }
-        .disabled(controller.subtitleOptions.isEmpty || controller.isSwitching)
+        .transition(.opacity)
     }
 
-    private func menuLabel(_ symbol: String, text: LocalizedStringKey) -> some View {
-        Image(systemName: symbol)
-            .font(.title3)
-            .frame(width: 44, height: 44)
-            .background(.ultraThinMaterial, in: Circle())
-            .accessibilityLabel(text)
+    private func trackColumn(_ title: LocalizedStringKey, options: [(Int, String)], selected: Int?,
+                             onSelect: @escaping (Int) -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.6))
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 4)
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(options, id: \.0) { id, label in
+                        Button {
+                            guard id != selected else { return }
+                            onSelect(id)
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "checkmark")
+                                    .font(.body.weight(.semibold))
+                                    .opacity(id == selected ? 1 : 0)
+                                Text(label)
+                                    .multilineTextAlignment(.leading)
+                                    .fontWeight(id == selected ? .semibold : .regular)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 16)
+                            .frame(minHeight: 48)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(controller.isSwitching)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func circleButton(_ symbol: String, label: LocalizedStringKey, action: @escaping () -> Void) -> some View {
@@ -216,7 +269,14 @@ struct MPVPlayerView: View {
     // MARK: - Helpers
 
     private func toggleControls() {
+        holdControls = false
         withAnimation(.easeInOut(duration: 0.2)) { showControls.toggle() }
+        scheduleHide()
+    }
+
+    private func closeTracks() {
+        withAnimation(.easeOut(duration: 0.2)) { showTracks = false }
+        holdControls = false
         scheduleHide()
     }
 
@@ -225,12 +285,61 @@ struct MPVPlayerView: View {
         guard showControls else { return }
         hideTask = Task {
             try? await Task.sleep(for: .seconds(4))
-            guard !Task.isCancelled, !controller.isPaused, scrubPosition == nil else { return }
+            guard !Task.isCancelled, !controller.isPaused, !isScrubbing, !holdControls else { return }
             withAnimation(.easeInOut(duration: 0.3)) { showControls = false }
         }
     }
+}
 
-    private func timeText(_ seconds: Double) -> String {
+/// Seek bar with elapsed/remaining time. Lives in its own view so the frequent time updates
+/// only redraw this bar.
+struct MPVScrubBar: View {
+    let controller: MPVPlayerController
+    let onScrubbing: (Bool) -> Void
+
+    @State private var isDragging = false
+    @State private var dragValue: Double = 0
+
+    var body: some View {
+        let shown = isDragging ? dragValue : controller.position
+        let duration = max(controller.duration, 1)
+        VStack(spacing: 4) {
+            Slider(
+                value: Binding(
+                    get: { min(shown, duration) },
+                    set: { value in
+                        if isDragging {
+                            dragValue = value
+                        } else {
+                            // A tap on the track changes the value without a drag: seek right away.
+                            controller.seek(to: value)
+                        }
+                    }),
+                in: 0...duration
+            ) { editing in
+                if editing {
+                    dragValue = controller.position
+                    isDragging = true
+                    onScrubbing(true)
+                } else {
+                    controller.seek(to: dragValue)
+                    isDragging = false
+                    onScrubbing(false)
+                }
+            }
+            .tint(.white)
+
+            HStack {
+                Text(Self.timeText(shown))
+                Spacer()
+                Text("−" + Self.timeText(max(controller.duration - shown, 0)))
+            }
+            .font(.caption.monospacedDigit())
+            .foregroundStyle(.white.opacity(0.8))
+        }
+    }
+
+    private static func timeText(_ seconds: Double) -> String {
         Ticks.clockText(Ticks.ticks(seconds.isFinite ? seconds : 0))
     }
 }
