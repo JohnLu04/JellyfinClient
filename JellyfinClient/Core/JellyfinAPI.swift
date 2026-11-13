@@ -236,6 +236,25 @@ struct JellyfinAPI {
         ])
     }
 
+    /// Newest additions to a TV library as whole series: new episodes/seasons are mapped to their series
+    /// (newest first, each series once). Jellyfin's own grouping only merges some of them.
+    func latestSeries(parentId: String, limit: Int = 16) async throws -> [BaseItem] {
+        let recent = try await latest(parentId: parentId, limit: 60)
+        var seen = Set<String>()
+        let seriesIds = recent.compactMap { item -> String? in
+            let id = item.type == "Series" ? item.id : item.seriesId
+            guard let id, seen.insert(id).inserted else { return nil }
+            return id
+        }.prefix(limit)
+        guard !seriesIds.isEmpty else { return [] }
+        let result: ItemsResult = try await get("Items", [
+            "userId": userId, "ids": seriesIds.joined(separator: ","),
+            "fields": "PrimaryImageAspectRatio,Overview,Genres",
+        ])
+        let byId = Dictionary(result.items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return seriesIds.compactMap { byId[$0] }
+    }
+
     func similar(itemId: String, limit: Int = 12) async throws -> [BaseItem] {
         let result: ItemsResult = try await get("Items/\(itemId)/Similar", [
             "userId": userId, "limit": String(limit), "fields": "PrimaryImageAspectRatio",

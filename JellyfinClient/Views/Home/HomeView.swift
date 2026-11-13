@@ -194,7 +194,13 @@ struct HomeView: View {
         let candidates = views.filter { ["movies", "tvshows"].contains($0.collectionType ?? "") }
         return await withTaskGroup(of: (Int, BaseItem, [BaseItem]).self) { group in
             for (index, library) in candidates.enumerated() {
-                group.addTask { (index, library, (try? await api.latest(parentId: library.id)) ?? []) }
+                group.addTask {
+                    // TV libraries list whole series, never single new episodes or seasons.
+                    let items = library.collectionType == "tvshows"
+                        ? try? await api.latestSeries(parentId: library.id)
+                        : try? await api.latest(parentId: library.id)
+                    return (index, library, items ?? [])
+                }
             }
             var results: [(Int, BaseItem, [BaseItem])] = []
             for await result in group where !result.2.isEmpty { results.append(result) }
