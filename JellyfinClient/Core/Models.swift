@@ -48,6 +48,65 @@ struct MediaSourceInfo: Decodable {
     let supportsDirectStream: Bool?
     let supportsTranscoding: Bool?
     let transcodingUrl: String?
+    let mediaStreams: [MediaStream]?
+    let defaultAudioStreamIndex: Int?
+    let defaultSubtitleStreamIndex: Int?
+
+    var audioStreams: [MediaStream] { (mediaStreams ?? []).filter { $0.type == "Audio" } }
+    var subtitleStreams: [MediaStream] { (mediaStreams ?? []).filter { $0.type == "Subtitle" } }
+}
+
+/// One video, audio or subtitle stream of a media source. `index` is Jellyfin's stream index.
+struct MediaStream: Decodable, Identifiable, Hashable {
+    let index: Int
+    let type: String?
+    let codec: String?
+    let language: String?
+    let title: String?
+    let displayTitle: String?
+    let isDefault: Bool?
+    let isForced: Bool?
+    let isExternal: Bool?
+    let isTextSubtitleStream: Bool?
+    let deliveryMethod: String?
+    let deliveryUrl: String?
+    let channels: Int?
+
+    var id: Int { index }
+
+    var label: String {
+        if let displayTitle, !displayTitle.isEmpty { return displayTitle }
+        let parts = [title, language?.uppercased(), codec?.uppercased()].compactMap { $0 }.filter { !$0.isEmpty }
+        return parts.isEmpty ? "Track \(index)" : parts.joined(separator: " · ")
+    }
+
+    /// Text subtitles can be delivered as separate files; image subtitles (PGS, VobSub) can't.
+    var isTextSubtitle: Bool {
+        if let isTextSubtitleStream { return isTextSubtitleStream }
+        let textCodecs: Set<String> = ["srt", "subrip", "ass", "ssa", "vtt", "webvtt", "mov_text", "sub", "smi", "ttml", "text"]
+        return textCodecs.contains((codec ?? "").lowercased())
+    }
+}
+
+/// The audio/subtitle choice for a playback. `subtitleIndex == nil` means subtitles off.
+struct TrackSelection: Equatable {
+    var audioIndex: Int?
+    var subtitleIndex: Int?
+
+    static func defaults(for source: MediaSourceInfo?) -> TrackSelection {
+        let audio = source?.defaultAudioStreamIndex ?? source?.audioStreams.first(where: { $0.isDefault == true })?.index
+            ?? source?.audioStreams.first?.index
+        let subtitle = source?.defaultSubtitleStreamIndex.flatMap { $0 >= 0 ? $0 : nil }
+        return TrackSelection(audioIndex: audio, subtitleIndex: subtitle)
+    }
+}
+
+extension Array where Element == MediaStream {
+    /// Position of a stream among the streams embedded in the file (external ones excluded),
+    /// which is how players number their tracks.
+    func embeddedOrdinal(of index: Int) -> Int? {
+        filter { $0.isExternal != true }.sorted { $0.index < $1.index }.firstIndex { $0.index == index }
+    }
 }
 
 struct PlaybackInfoResponse: Decodable {

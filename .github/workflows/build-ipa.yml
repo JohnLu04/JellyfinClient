@@ -28,6 +28,14 @@ jobs:
           sudo xcode-select -s "$XCODE"
           xcodebuild -version
 
+      # MPVKit ships ~1 GB of prebuilt frameworks; keep them between runs.
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: build/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('JellyfinClient.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
       - name: Build IPA
         id: build
         run: |

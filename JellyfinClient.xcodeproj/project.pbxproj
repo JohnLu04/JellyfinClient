@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		4A1F00000000000000000020 /* MPVKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4A1F00000000000000000021 /* MPVKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		4A1F00000000000000000001 /* JellyfinClient.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = JellyfinClient.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		4A1F0000000000000000000C /* JellyfinClient-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "JellyfinClient-Info.plist"; sourceTree = "<group>"; };
@@ -24,6 +28,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				4A1F00000000000000000020 /* MPVKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -67,6 +72,7 @@
 			);
 			name = JellyfinClient;
 			packageProductDependencies = (
+				4A1F00000000000000000021 /* MPVKit */,
 			);
 			productName = JellyfinClient;
 			productReference = 4A1F00000000000000000001 /* JellyfinClient.app */;
@@ -96,6 +102,9 @@
 			);
 			mainGroup = 4A1F00000000000000000004;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				4A1F00000000000000000022 /* XCRemoteSwiftPackageReference "MPVKit" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4A1F00000000000000000005 /* Products */;
 			projectDirPath = "";
@@ -251,6 +260,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		4A1F00000000000000000022 /* XCRemoteSwiftPackageReference "MPVKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mpvkit/MPVKit";
+			requirement = {
+				kind = exactVersion;
+				version = "1.1.0-n9.0.2";
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		4A1F00000000000000000021 /* MPVKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 4A1F00000000000000000022 /* XCRemoteSwiftPackageReference "MPVKit" */;
+			productName = MPVKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 4A1F0000000000000000000A /* Project object */;
 }

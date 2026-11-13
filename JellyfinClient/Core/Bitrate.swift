@@ -43,4 +43,5 @@ enum SettingsKeys {
     static let streamingMbit = "settings.streamingMbit"   // 0 = original
     static let downloadMbit = "settings.downloadMbit"
     static let lastServerAddress = "settings.lastServerAddress"
+    static let videoPlayer = "settings.videoPlayer"         // PlayerKind raw value
 }

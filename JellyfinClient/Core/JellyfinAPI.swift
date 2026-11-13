@@ -242,12 +242,13 @@ struct JellyfinAPI {
 
     // MARK: - Playback
 
-    func playbackInfo(itemId: String, maxBitrate: Int, mediaSourceId: String? = nil) async throws -> PlaybackInfoResponse {
+    func playbackInfo(itemId: String, maxBitrate: Int, player: PlayerKind, mediaSourceId: String? = nil,
+                      selection: TrackSelection? = nil) async throws -> PlaybackInfoResponse {
         var body: [String: Any] = [
             "UserId": userId ?? "",
             "MaxStreamingBitrate": maxBitrate,
             "StartTimeTicks": 0,
-            "DeviceProfile": DeviceProfile.make(maxBitrate: maxBitrate),
+            "DeviceProfile": DeviceProfile.make(maxBitrate: maxBitrate, player: player),
             "EnableDirectPlay": true,
             "EnableDirectStream": true,
             "EnableTranscoding": true,
@@ -256,6 +257,10 @@ struct JellyfinAPI {
             "AutoOpenLiveStream": true,
         ]
         if let mediaSourceId { body["MediaSourceId"] = mediaSourceId }
+        if let selection {
+            if let audio = selection.audioIndex { body["AudioStreamIndex"] = audio }
+            body["SubtitleStreamIndex"] = selection.subtitleIndex ?? -1
+        }
         let data = try JSONSerialization.data(withJSONObject: body)
         return try await send("POST", "Items/\(itemId)/PlaybackInfo", query: ["userId": userId], body: data)
     }
@@ -268,6 +273,33 @@ struct JellyfinAPI {
         ])
     }
 
+    /// Adds the access token to a URL that doesn't already carry one.
+    func withToken(_ url: URL) -> URL {
+        guard let accessToken, var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
+        var items = comps.queryItems ?? []
+        let names = Set(items.map { $0.name.lowercased() })
+        guard !names.contains("api_key"), !names.contains("apikey") else { return url }
+        items.append(URLQueryItem(name: "api_key", value: accessToken))
+        comps.queryItems = items
+        return comps.url ?? url
+    }
+
+    /// A text subtitle as a standalone file (external subtitles, or embedded ones extracted by the server).
+    func subtitleURL(itemId: String, mediaSourceId: String?, stream: MediaStream) -> URL? {
+        if let delivery = stream.deliveryUrl, let resolved = absoluteURL(serverRelative: delivery) {
+            return withToken(resolved)
+        }
+        guard stream.isTextSubtitle, let mediaSourceId else { return nil }
+        let format: String
+        switch (stream.codec ?? "").lowercased() {
+        case "ass": format = "ass"
+        case "ssa": format = "ssa"
+        case "vtt", "webvtt": format = "vtt"
+        default: format = "srt"
+        }
+        return url("Videos/\(itemId)/\(mediaSourceId)/Subtitles/\(stream.index)/Stream.\(format)", ["api_key": accessToken])
+    }
+
     struct PlaybackReport: Encodable {
         var itemId: String
         var mediaSourceId: String?
@@ -275,6 +307,8 @@ struct JellyfinAPI {
         var positionTicks: Int64
         var isPaused: Bool
         var playMethod: String
+        var audioStreamIndex: Int?
+        var subtitleStreamIndex: Int?
         var canSeek = true
     }
 

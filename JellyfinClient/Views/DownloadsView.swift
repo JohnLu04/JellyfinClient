@@ -9,7 +9,7 @@ struct DownloadsView: View {
                 ForEach(downloads.records) { record in
                     Button {
                         if record.state == .completed, let url = downloads.fileURL(for: record) {
-                            PlaybackCoordinator.shared.playLocal(fileURL: url)
+                            PlaybackCoordinator.shared.playLocal(fileURL: url, title: record.name)
                         }
                     } label: {
                         DownloadRow(record: record)

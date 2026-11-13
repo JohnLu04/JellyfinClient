@@ -7,6 +7,9 @@ struct ItemDetailView: View {
     @State private var item: BaseItem
     /// Per-title streaming limit in Mbit/s (0 = Original), prefilled from Settings.
     @State private var streamingMbit: Double
+    /// Audio/subtitle choice; filled from the server's defaults once streams are known.
+    @State private var selection: TrackSelection?
+    @AppStorage(SettingsKeys.videoPlayer) private var videoPlayer = PlayerKind.defaultKind.rawValue
     @State private var isStarting = false
     @State private var showDownloadOptions = false
     @State private var errorMessage: String?
@@ -14,6 +17,9 @@ struct ItemDetailView: View {
     init(item: BaseItem) {
         _item = State(initialValue: item)
         _streamingMbit = State(initialValue: UserDefaults.standard.double(forKey: SettingsKeys.streamingMbit))
+        if item.primaryMediaSource?.mediaStreams != nil {
+            _selection = State(initialValue: .defaults(for: item.primaryMediaSource))
+        }
     }
 
     var body: some View {
@@ -26,6 +32,7 @@ struct ItemDetailView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     header
                     playButtons
+                    tracksBox
                     qualityBox
                     downloadBox
                     if let overview = item.overview, !overview.isEmpty {
@@ -106,6 +113,49 @@ struct ItemDetailView: View {
         .controlSize(.large)
         .disabled(isStarting)
         .overlay { if isStarting { ProgressView() } }
+
+        Text("Player: \((PlayerKind(rawValue: videoPlayer) ?? .defaultKind).title) · change in Settings")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private var tracksBox: some View {
+        if let source = item.primaryMediaSource, !source.audioStreams.isEmpty || !source.subtitleStreams.isEmpty {
+            let current = selection ?? .defaults(for: source)
+            GroupBox {
+                VStack(spacing: 6) {
+                    if !source.audioStreams.isEmpty {
+                        LabeledContent("Audio") {
+                            Picker("Audio", selection: Binding(
+                                get: { current.audioIndex },
+                                set: { selection = TrackSelection(audioIndex: $0, subtitleIndex: current.subtitleIndex) }
+                            )) {
+                                ForEach(source.audioStreams) { stream in
+                                    Text(stream.label).tag(Optional(stream.index))
+                                }
+                            }
+                            .labelsHidden()
+                        }
+                    }
+                    LabeledContent("Subtitles") {
+                        Picker("Subtitles", selection: Binding(
+                            get: { current.subtitleIndex },
+                            set: { selection = TrackSelection(audioIndex: current.audioIndex, subtitleIndex: $0) }
+                        )) {
+                            Text("Off").tag(Int?.none)
+                            ForEach(source.subtitleStreams) { stream in
+                                Text(stream.label).tag(Optional(stream.index))
+                            }
+                        }
+                        .labelsHidden()
+                    }
+                }
+            } label: {
+                Label("Audio & Subtitles", systemImage: "captions.bubble")
+            }
+        }
     }
 
     private var qualityBox: some View {
@@ -171,7 +221,12 @@ struct ItemDetailView: View {
 
     private func refresh() async {
         guard let api = app.api else { return }
-        if let fresh = try? await api.item(id: item.id) { item = fresh }
+        if let fresh = try? await api.item(id: item.id) {
+            item = fresh
+            if selection == nil, fresh.primaryMediaSource?.mediaStreams != nil {
+                selection = .defaults(for: fresh.primaryMediaSource)
+            }
+        }
     }
 
     private func play(fromTicks ticks: Int64) {
@@ -180,7 +235,8 @@ struct ItemDetailView: View {
         Task {
             defer { isStarting = false }
             do {
-                try await PlaybackCoordinator.shared.playRemote(item: item, api: api, maxMbit: streamingMbit, startTicks: ticks)
+                try await PlaybackCoordinator.shared.play(item: item, api: api, maxMbit: streamingMbit, startTicks: ticks,
+                                                          selection: selection ?? .defaults(for: item.primaryMediaSource))
             } catch {
                 errorMessage = error.localizedDescription
             }
@@ -189,7 +245,7 @@ struct ItemDetailView: View {
 
     private func playOffline(_ record: DownloadRecord) {
         guard let url = downloads.fileURL(for: record) else { return }
-        PlaybackCoordinator.shared.playLocal(fileURL: url)
+        PlaybackCoordinator.shared.playLocal(fileURL: url, title: item.name ?? record.name)
     }
 }
 
@@ -210,7 +266,9 @@ struct DownloadOptionsSheet: View {
         self.item = item
         let stored = UserDefaults.standard.object(forKey: SettingsKeys.downloadMbit) as? Double
         _mbit = State(initialValue: Bitrate.snap(stored ?? 4))
-        _mode = State(initialValue: Self.isNativeContainer(item) ? .original : .transcoded)
+        // mpv plays any container offline, so the original file is the better default there.
+        let originalPlays = PlayerKind.current == .mpv || Self.isNativeContainer(item)
+        _mode = State(initialValue: originalPlays ? .original : .transcoded)
     }
 
     private static func isNativeContainer(_ item: BaseItem) -> Bool {
@@ -249,8 +307,8 @@ struct DownloadOptionsSheet: View {
                     }
                     if mode == .original, let container = item.primaryMediaSource?.container {
                         LabeledContent("Format", value: container.uppercased())
-                        if !Self.isNativeContainer(item) {
-                            Label("This format may not play offline on iPhone. Choose “Transcoded” for guaranteed playback.",
+                        if !Self.isNativeContainer(item) && PlayerKind.current == .native {
+                            Label("The Apple player can't play this format offline. Choose “Transcoded” or switch to mpv in Settings.",
                                   systemImage: "exclamationmark.triangle")
                                 .font(.footnote)
                                 .foregroundStyle(.orange)

@@ -1,148 +1,69 @@
-import AVKit
+import SwiftUI
 import UIKit
 
-/// Asks the server how to play an item, presents the system player and reports progress back.
-///
-/// Decision flow: `POST /Items/{id}/PlaybackInfo` with our device profile and the bitrate limit.
-/// - Server returns a `TranscodingUrl` → HLS stream (remux or transcode, respecting the limit).
-/// - Otherwise the file is natively playable and below the limit → direct play of the static file.
+/// Starts playback with the player chosen in Settings, reports progress to the server
+/// and cleans up (stop report, transcode shutdown) when the player closes.
 @MainActor
-final class PlaybackCoordinator: NSObject, AVPlayerViewControllerDelegate {
+final class PlaybackCoordinator {
     static let shared = PlaybackCoordinator()
 
-    private struct RemoteContext {
-        let api: JellyfinAPI
-        let itemId: String
-        let mediaSourceId: String?
-        let playSessionId: String?
-        let playMethod: String
-    }
-
-    private var player: AVPlayer?
-    private var remote: RemoteContext?
-    private var timeObserver: Any?
-    private var statusObservation: NSKeyValueObservation?
-    private var rateObservation: NSKeyValueObservation?
+    private(set) var session: PlaybackSession?
+    private var engine: PlaybackEngine?
+    private weak var presentedController: UIViewController?
+    private var progressTask: Task<Void, Never>?
     private var didReportStart = false
-    /// Reports are chained so the server always receives them in order (Stopped last).
-    private var reportChain: Task<Void, Never>?
+    /// Server calls are chained so they arrive in order (Stopped always last).
+    private var requestChain: Task<Void, Never>?
 
     // MARK: - Public
 
-    func playRemote(item: BaseItem, api: JellyfinAPI, maxMbit: Double, startTicks: Int64) async throws {
-        let info = try await api.playbackInfo(itemId: item.id, maxBitrate: Bitrate.bps(forMbit: maxMbit))
-        if let code = info.errorCode { throw APIError.playback(code: code) }
-        guard let source = info.mediaSources?.first else { throw APIError.noPlayableSource }
-
-        let url: URL
-        let method: String
-        if let transcodingPath = source.transcodingUrl, let resolved = api.absoluteURL(serverRelative: transcodingPath) {
-            url = Self.adjustTranscodingURL(resolved, api: api, source: source, maxMbit: maxMbit)
-            method = transcodingPath.localizedCaseInsensitiveContains("videocodec=copy") ? "DirectStream" : "Transcode"
-        } else if source.supportsDirectPlay == true || source.supportsDirectStream == true {
-            url = api.directStreamURL(itemId: item.id, mediaSourceId: source.id,
-                                      container: source.container, playSessionId: info.playSessionId)
-            method = "DirectPlay"
-        } else {
-            throw APIError.noPlayableSource
-        }
-
-        #if DEBUG
-        print("[Playback] \(method) → \(url.absoluteString.replacingOccurrences(of: api.accessToken ?? "-", with: "<token>"))")
-        #endif
-
-        let context = RemoteContext(api: api, itemId: item.id, mediaSourceId: source.id,
-                                    playSessionId: info.playSessionId, playMethod: method)
-        present(url: url, startSeconds: Ticks.seconds(startTicks), remote: context)
-    }
-
-    func playLocal(fileURL: URL) {
-        present(url: fileURL, startSeconds: 0, remote: nil)
-    }
-
-    // MARK: - Presentation
-
-    private func present(url: URL, startSeconds: Double, remote: RemoteContext?) {
+    func play(item: BaseItem, api: JellyfinAPI, maxMbit: Double, startTicks: Int64, selection: TrackSelection) async throws {
+        let player = PlayerKind.current
+        let session = try await PlaybackResolver.resolve(item: item, api: api, maxMbit: maxMbit,
+                                                         selection: selection, player: player)
         stop()
-
-        let playerItem = AVPlayerItem(url: url)
-        let player = AVPlayer(playerItem: playerItem)
-        self.player = player
-        self.remote = remote
-        didReportStart = false
-
-        let controller = AVPlayerViewController()
-        controller.player = player
-        controller.delegate = self
-        controller.allowsPictureInPicturePlayback = true
-        controller.modalPresentationStyle = .fullScreen
-
-        statusObservation = playerItem.observe(\.status, options: [.new]) { [weak self] item, _ in
-            Task { @MainActor in self?.itemStatusChanged(item, startSeconds: startSeconds) }
-        }
-        rateObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] _, _ in
-            Task { @MainActor in self?.report(.progress) }
-        }
-        timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 10, preferredTimescale: 1), queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.report(.progress) }
-        }
-
-        topViewController()?.present(controller, animated: true)
+        self.session = session
+        present(player: player, url: session.url, title: item.name ?? "",
+                startSeconds: Ticks.seconds(startTicks), session: session)
     }
 
-    private func itemStatusChanged(_ item: AVPlayerItem, startSeconds: Double) {
-        guard item === player?.currentItem else { return }
-        switch item.status {
-        case .readyToPlay where !didReportStart:
-            didReportStart = true
-            if startSeconds > 1 {
-                player?.seek(to: CMTime(seconds: startSeconds, preferredTimescale: 600),
-                             toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] _ in
-                    Task { @MainActor in self?.player?.play() }
-                }
-            } else {
-                player?.play()
-            }
-            report(.start)
-        case .failed:
-            #if DEBUG
-            print("[Playback] failed: \(item.error?.localizedDescription ?? "unknown")")
-            #endif
-        default:
-            break
-        }
+    func playLocal(fileURL: URL, title: String) {
+        stop()
+        present(player: PlayerKind.current, url: fileURL, title: title, startSeconds: 0, session: nil)
     }
 
-    nonisolated func playerViewController(_ playerViewController: AVPlayerViewController,
-                                          willEndFullScreenPresentationWithAnimationCoordinator coordinator: UIViewControllerTransitionCoordinator) {
-        MainActor.assumeIsolated {
-            _ = coordinator.animate(alongsideTransition: nil) { context in
-                guard !context.isCancelled else { return }
-                Task { @MainActor in PlaybackCoordinator.shared.stop() }
-            }
+    /// Asks the server for a new stream with other tracks (used by mpv when a switch needs a new transcode).
+    func reload(selection: TrackSelection) async throws -> PlaybackSession {
+        guard let old = session else { throw APIError.noPlayableSource }
+        let new = try await PlaybackResolver.resolve(item: old.item, api: old.api, maxMbit: old.maxMbit,
+                                                     selection: selection, player: old.player)
+        if old.playMethod != .directPlay, let id = old.playSessionId {
+            enqueue { try? await old.api.stopTranscoding(playSessionId: id) }
         }
+        session = new
+        report(.progress)
+        return new
     }
 
     /// Tears down the current player and tells the server playback ended.
     func stop() {
-        guard let player else { return }
-        // Detach observers first so pausing below can't trigger another progress report.
-        if let timeObserver { player.removeTimeObserver(timeObserver) }
-        timeObserver = nil
-        statusObservation = nil
-        rateObservation = nil
+        guard let engine else { return }
+        progressTask?.cancel()
+        progressTask = nil
         report(.stopped)
-        if let remote, remote.playMethod != "DirectPlay", let session = remote.playSessionId {
-            let api = remote.api
-            let previous = reportChain
-            reportChain = Task {
-                await previous?.value
-                try? await api.stopTranscoding(playSessionId: session)
-            }
+        if let session, session.playMethod != .directPlay, let id = session.playSessionId {
+            let api = session.api
+            enqueue { try? await api.stopTranscoding(playSessionId: id) }
         }
-        player.pause()
-        self.player = nil
-        self.remote = nil
+        engine.teardown()
+        self.engine = nil
+        session = nil
+        didReportStart = false
+
+        if let controller = presentedController, controller.presentingViewController != nil, !controller.isBeingDismissed {
+            controller.dismiss(animated: true)
+        }
+        presentedController = nil
 
         // Give the server a moment to store the position before screens reload.
         Task {
@@ -151,42 +72,79 @@ final class PlaybackCoordinator: NSObject, AVPlayerViewControllerDelegate {
         }
     }
 
-    // MARK: - Reporting
+    // MARK: - Presentation
 
-    private func report(_ event: JellyfinAPI.PlaybackEvent) {
-        guard let remote, let player, didReportStart || event == .start else { return }
-        let report = JellyfinAPI.PlaybackReport(
-            itemId: remote.itemId,
-            mediaSourceId: remote.mediaSourceId,
-            playSessionId: remote.playSessionId,
-            positionTicks: Ticks.ticks(player.currentTime().seconds),
-            isPaused: player.timeControlStatus == .paused,
-            playMethod: remote.playMethod
-        )
-        let api = remote.api
-        let previous = reportChain
-        reportChain = Task {
-            await previous?.value
-            try? await api.reportPlayback(event, report)
+    private func present(player: PlayerKind, url: URL, title: String, startSeconds: Double, session: PlaybackSession?) {
+        let controller: UIViewController
+        switch player {
+        case .native:
+            let native = NativePlayerEngine(url: url, startSeconds: startSeconds, session: session)
+            native.onReady = { [weak self] in self?.engineDidStart() }
+            native.onStateChange = { [weak self] in self?.report(.progress) }
+            native.onDismiss = { [weak self] in self?.stop() }
+            engine = native
+            controller = native.makeViewController()
+
+        case .mpv:
+            let mpv = MPVPlayerController(title: title, url: url, startSeconds: startSeconds, session: session)
+            mpv.onReady = { [weak self] in self?.engineDidStart() }
+            mpv.onStateChange = { [weak self] in self?.report(.progress) }
+            mpv.onFinished = { [weak self] in self?.stop() }
+            mpv.onSelectionChange = { [weak self] selection in
+                self?.session?.selection = selection
+                self?.report(.progress)
+            }
+            mpv.reloader = { [weak self] selection in
+                guard let self else { throw CancellationError() }
+                return try await self.reload(selection: selection)
+            }
+            engine = mpv
+            let host = UIHostingController(rootView: MPVPlayerView(controller: mpv) { [weak self] in self?.stop() })
+            host.modalPresentationStyle = .fullScreen
+            host.view.backgroundColor = .black
+            controller = host
+        }
+        presentedController = controller
+        topViewController()?.present(controller, animated: true)
+    }
+
+    private func engineDidStart() {
+        guard !didReportStart else { return }
+        didReportStart = true
+        report(.start)
+        progressTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(10))
+                guard !Task.isCancelled else { break }
+                self?.report(.progress)
+            }
         }
     }
 
-    // MARK: - Helpers
+    // MARK: - Reporting
 
-    /// Makes sure the HLS URL carries the token and, when we're limiting bitrate, a sensible resolution cap.
-    private static func adjustTranscodingURL(_ url: URL, api: JellyfinAPI, source: MediaSourceInfo, maxMbit: Double) -> URL {
-        guard var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url }
-        var items = comps.queryItems ?? []
-        let names = Set(items.map { $0.name.lowercased() })
-        if !names.contains("api_key") && !names.contains("apikey"), let token = api.accessToken {
-            items.append(URLQueryItem(name: "api_key", value: token))
+    private func report(_ event: JellyfinAPI.PlaybackEvent) {
+        guard let session, let engine, didReportStart || event == .start else { return }
+        let report = JellyfinAPI.PlaybackReport(
+            itemId: session.item.id,
+            mediaSourceId: session.source.id,
+            playSessionId: session.playSessionId,
+            positionTicks: Ticks.ticks(engine.currentSeconds),
+            isPaused: engine.isPausedNow,
+            playMethod: session.playMethod.rawValue,
+            audioStreamIndex: session.selection.audioIndex,
+            subtitleStreamIndex: session.selection.subtitleIndex ?? -1
+        )
+        let api = session.api
+        enqueue { try? await api.reportPlayback(event, report) }
+    }
+
+    private func enqueue(_ work: @escaping @Sendable () async -> Void) {
+        let previous = requestChain
+        requestChain = Task {
+            await previous?.value
+            await work()
         }
-        let sourceIsAboveLimit = maxMbit > 0 && (source.bitrate ?? .max) > Bitrate.bps(forMbit: maxMbit)
-        if sourceIsAboveLimit, !names.contains("maxwidth"), let width = Bitrate.maxWidth(forMbit: maxMbit) {
-            items.append(URLQueryItem(name: "maxWidth", value: String(width)))
-        }
-        comps.queryItems = items
-        return comps.url ?? url
     }
 
     private func topViewController() -> UIViewController? {

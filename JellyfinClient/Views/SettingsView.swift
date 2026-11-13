@@ -5,7 +5,10 @@ struct SettingsView: View {
     @Environment(DownloadManager.self) private var downloads
     @AppStorage(SettingsKeys.streamingMbit) private var streamingMbit = 0.0
     @AppStorage(SettingsKeys.downloadMbit) private var downloadMbit = 4.0
+    @AppStorage(SettingsKeys.videoPlayer) private var videoPlayer = PlayerKind.defaultKind.rawValue
     @State private var confirmSignOut = false
+
+    private var selectedPlayer: PlayerKind { PlayerKind(rawValue: videoPlayer) ?? .defaultKind }
 
     var body: some View {
         NavigationStack {
@@ -14,6 +17,20 @@ struct SettingsView: View {
                     LabeledContent("Name", value: app.session?.serverName ?? "–")
                     LabeledContent("Address", value: app.session?.serverURL.absoluteString ?? "–")
                     LabeledContent("User", value: app.session?.userName ?? "–")
+                }
+
+                Section {
+                    Picker("Video Player", selection: $videoPlayer) {
+                        ForEach(PlayerKind.allCases) { kind in
+                            Text(kind.title).tag(kind.rawValue)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                } header: {
+                    Text("Video Player")
+                } footer: {
+                    Text(selectedPlayer.summary)
                 }
 
                 Section {
