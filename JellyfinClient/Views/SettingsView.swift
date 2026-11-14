@@ -8,6 +8,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.videoPlayer) private var videoPlayer = PlayerKind.defaultKind.rawValue
     @AppStorage(SettingsKeys.autoplayTrailers) private var autoplayTrailers = true
     @State private var confirmSignOut = false
+    @Environment(\.dismiss) private var dismiss
 
     private var selectedPlayer: PlayerKind { PlayerKind(rawValue: videoPlayer) ?? .defaultKind }
 
@@ -67,6 +68,9 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
             .confirmationDialog("Sign out of this server?", isPresented: $confirmSignOut, titleVisibility: .visible) {
                 Button("Sign Out", role: .destructive) { Task { await app.signOut() } }
             } message: {

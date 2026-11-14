@@ -40,8 +40,8 @@ struct MainTabView: View {
     var body: some View {
         TabView {
             Tab("Home", systemImage: "house.fill") { HomeView() }
-            Tab("Downloads", systemImage: "arrow.down.circle.fill") { DownloadsView() }
-            Tab("Settings", systemImage: "gearshape.fill") { SettingsView() }
+            Tab("Favorites", systemImage: "heart.fill") { FavoritesView() }
+            Tab("Library", systemImage: "rectangle.stack.fill") { LibraryView() }
         }
     }
 }

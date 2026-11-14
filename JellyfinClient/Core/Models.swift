@@ -281,6 +281,8 @@ enum Ticks {
 extension Notification.Name {
     /// Posted when the player closes, so screens can refresh resume positions.
     static let playbackDidStop = Notification.Name("JellyfinClient.playbackDidStop")
+    /// Posted after a favorite was added or removed; `object` is the item id, `userInfo["isFavorite"]` the new state.
+    static let favoriteDidChange = Notification.Name("JellyfinClient.favoriteDidChange")
     /// Posted right before a player opens, so inline trailers can stop.
     static let playbackWillStart = Notification.Name("JellyfinClient.playbackWillStart")
 }

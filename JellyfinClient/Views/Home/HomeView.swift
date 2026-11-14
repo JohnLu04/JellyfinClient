@@ -71,6 +71,7 @@ struct HomeView: View {
                     .padding(.bottom, 24)
                 }
                 .ignoresSafeArea(edges: .top)
+                .appTopActions(floating: true)
                 .overlay {
                     if !hasLoaded {
                         ProgressView()
@@ -93,6 +94,10 @@ struct HomeView: View {
             .task { if !hasLoaded { await load() } }
             .onReceive(NotificationCenter.default.publisher(for: .playbackDidStop)) { _ in
                 Task { await load() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .favoriteDidChange)) { note in
+                guard let id = note.object as? String, let isFavorite = note.userInfo?["isFavorite"] as? Bool else { return }
+                if isFavorite { favorites.insert(id) } else { favorites.remove(id) }
             }
             .alert("Playback failed", isPresented: Binding(get: { playError != nil }, set: { if !$0 { playError = nil } })) {
                 Button("OK", role: .cancel) {}
@@ -148,14 +153,7 @@ struct HomeView: View {
     private func toggleFavorite(_ item: BaseItem) {
         guard let api = app.api else { return }
         let newValue = !favorites.contains(item.id)
-        if newValue { favorites.insert(item.id) } else { favorites.remove(item.id) }
-        Task {
-            do {
-                try await api.setFavorite(itemId: item.id, newValue)
-            } catch {
-                if newValue { favorites.remove(item.id) } else { favorites.insert(item.id) }
-            }
-        }
+        Task { await Favorites.set(item.id, favorite: newValue, api: api) }
     }
 
     // MARK: - Loading

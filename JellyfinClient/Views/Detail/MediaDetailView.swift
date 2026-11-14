@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Title page for movies, series and episodes: trailer header, play/download buttons, description,
-/// cast, actions (My List, Share, playback options, season download) and tabs (episodes, similar titles).
+/// cast, actions (Favorite, Share, playback options, season download) and tabs (episodes, similar titles).
 struct MediaDetailView: View {
     @Environment(AppModel.self) private var app
     @Environment(DownloadManager.self) private var downloads
@@ -73,6 +73,10 @@ struct MediaDetailView: View {
         .task(id: selectedSeasonId) { await loadEpisodes() }
         .onReceive(NotificationCenter.default.publisher(for: .playbackDidStop)) { _ in
             Task { await refresh(); await loadEpisodes() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .favoriteDidChange)) { note in
+            guard note.object as? String == item.id, let value = note.userInfo?["isFavorite"] as? Bool else { return }
+            isFavorite = value
         }
         .sheet(item: $downloadSheetItem) { DownloadOptionsSheet(item: $0) }
         .sheet(isPresented: $showOptions) {
@@ -251,7 +255,12 @@ struct MediaDetailView: View {
 
     private var actionRow: some View {
         HStack(alignment: .top, spacing: 0) {
-            actionButton(isFavorite ? "checkmark" : "plus", "My List") { toggleFavorite() }
+            Button { toggleFavorite() } label: {
+                actionLabel(isFavorite ? "heart.fill" : "heart", "Favorite",
+                            tint: isFavorite ? Color.accentColor : nil)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isFavorite ? "Remove from Favorites" : "Add to Favorites")
 
             if let url = item.shareURL {
                 ShareLink(item: url, subject: Text(item.name ?? ""), message: Text(item.name ?? "")) {
@@ -281,10 +290,12 @@ struct MediaDetailView: View {
             .buttonStyle(.plain)
     }
 
-    private func actionLabel(_ symbol: String, _ title: LocalizedStringKey) -> some View {
+    private func actionLabel(_ symbol: String, _ title: LocalizedStringKey, tint: Color? = nil) -> some View {
         VStack(spacing: 8) {
             Image(systemName: symbol)
                 .font(.title2)
+                .foregroundStyle(tint ?? .primary)
+                .contentTransition(.symbolEffect(.replace))
                 .frame(height: 28)
             Text(title)
                 .font(.caption.weight(.semibold))
@@ -469,13 +480,9 @@ struct MediaDetailView: View {
     private func toggleFavorite() {
         guard let api = app.api else { return }
         let newValue = !isFavorite
-        isFavorite = newValue
         Task {
-            do {
-                try await api.setFavorite(itemId: item.id, newValue)
-            } catch {
-                isFavorite = !newValue
-                errorMessage = error.localizedDescription
+            if await !Favorites.set(item.id, favorite: newValue, api: api) {
+                errorMessage = String(localized: "Couldn't update favorites.")
             }
         }
     }

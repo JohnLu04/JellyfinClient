@@ -194,6 +194,16 @@ struct JellyfinAPI {
         return try await get("Items", query)
     }
 
+    /// The user's favorite movies, series and episodes.
+    func favoriteItems() async throws -> [BaseItem] {
+        let result: ItemsResult = try await get("Items", [
+            "userId": userId, "recursive": "true", "filters": "IsFavorite",
+            "includeItemTypes": "Movie,Series,Episode", "sortBy": "SortName", "sortOrder": "Ascending",
+            "fields": Self.listFields, "limit": "500",
+        ])
+        return result.items
+    }
+
     func item(id: String) async throws -> BaseItem {
         try await get("Items/\(id)", ["userId": userId])
     }

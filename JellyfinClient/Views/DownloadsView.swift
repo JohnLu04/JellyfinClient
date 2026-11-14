@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DownloadsView: View {
     @Environment(DownloadManager.self) private var downloads
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
@@ -30,6 +31,9 @@ struct DownloadsView: View {
                 }
             }
             .navigationTitle("Downloads")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
         }
     }
 }

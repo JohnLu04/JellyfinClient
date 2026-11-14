@@ -91,12 +91,12 @@
         }
       }
     },
-    "Add to My List": {
+    "Add to Favorites": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Zu „Meine Liste“ hinzufügen"
+            "value": "Zu Favoriten hinzufügen"
           }
         }
       }
@@ -251,12 +251,32 @@
         }
       }
     },
+    "Couldn't load favorites": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Favoriten konnten nicht geladen werden"
+          }
+        }
+      }
+    },
     "Couldn't load items": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Inhalte konnten nicht geladen werden"
+          }
+        }
+      }
+    },
+    "Couldn't update favorites.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Favoriten konnten nicht geändert werden."
           }
         }
       }
@@ -451,6 +471,26 @@
         }
       }
     },
+    "Favorite": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Favorit"
+          }
+        }
+      }
+    },
+    "Favorites": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Favoriten"
+          }
+        }
+      }
+    },
     "File size": {
       "localizations": {
         "de": {
@@ -551,6 +591,16 @@
         }
       }
     },
+    "Movies": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filme"
+          }
+        }
+      }
+    },
     "Movies and episodes you download appear here and can be watched offline.": {
       "localizations": {
         "de": {
@@ -567,16 +617,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Trailer stumm schalten"
-          }
-        }
-      }
-    },
-    "My List": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Meine Liste"
           }
         }
       }
@@ -607,6 +647,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Keine Downloads"
+          }
+        }
+      }
+    },
+    "No Favorites Yet": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Noch keine Favoriten"
           }
         }
       }
@@ -811,12 +861,12 @@
         }
       }
     },
-    "Remove from My List": {
+    "Remove from Favorites": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Aus „Meine Liste“ entfernen"
+            "value": "Aus Favoriten entfernen"
           }
         }
       }
@@ -857,6 +907,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Staffel"
+          }
+        }
+      }
+    },
+    "Series": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serien"
           }
         }
       }
@@ -997,6 +1057,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Untertitel verfügbar"
+          }
+        }
+      }
+    },
+    "Tap the heart on a movie or series to find it here.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tippe bei einem Film oder einer Serie auf das Herz, um ihn hier wiederzufinden."
           }
         }
       }

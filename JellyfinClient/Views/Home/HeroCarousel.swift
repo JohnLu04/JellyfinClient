@@ -16,7 +16,7 @@ struct HeroEntry: Identifiable {
     }
 }
 
-/// Full-width artwork carousel with title logo, genres, play and "My List" buttons.
+/// Full-width artwork carousel with title logo, genres, play and favorite buttons.
 struct HeroCarousel: View {
     @Environment(AppModel.self) private var app
     let title: LocalizedStringKey
@@ -91,13 +91,15 @@ struct HeroCarousel: View {
                             .overlay(Capsule().stroke(.white.opacity(0.15)))
                     }
                     Button { onToggleFavorite(entry.display) } label: {
-                        Image(systemName: favorites.contains(entry.display.id) ? "checkmark" : "plus")
+                        Image(systemName: favorites.contains(entry.display.id) ? "heart.fill" : "heart")
                             .font(.title3.weight(.semibold))
+                            .foregroundStyle(favorites.contains(entry.display.id) ? Color.accentColor : .white)
+                            .contentTransition(.symbolEffect(.replace))
                             .frame(width: 52, height: 52)
                             .background(.ultraThinMaterial, in: Circle())
                             .overlay(Circle().stroke(.white.opacity(0.15)))
                     }
-                    .accessibilityLabel(favorites.contains(entry.display.id) ? "Remove from My List" : "Add to My List")
+                    .accessibilityLabel(favorites.contains(entry.display.id) ? "Remove from Favorites" : "Add to Favorites")
                 }
                 .foregroundStyle(.white)
             }
