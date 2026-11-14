@@ -66,6 +66,7 @@ enum TrailerPicker {
 struct TrailerHero: View {
     @Environment(AppModel.self) private var app
     @AppStorage(SettingsKeys.autoplayTrailers) private var autoplayTrailers = true
+    @Environment(\.scenePhase) private var scenePhase
 
     let item: BaseItem
     let topInset: CGFloat
@@ -75,6 +76,8 @@ struct TrailerHero: View {
     @State private var isMuted = true
     @State private var isFinished = false
     @State private var isActive = true
+    /// The app is in the background (iOS pauses the trailer there); resume when it comes back.
+    @State private var isSuspended = false
 
     var body: some View {
         GeometryReader { geo in
@@ -116,6 +119,14 @@ struct TrailerHero: View {
         .task(id: trailerInfoKey) { await loadTrailer() }
         .onReceive(NotificationCenter.default.publisher(for: .playbackWillStart)) { _ in stopTrailer() }
         .onDisappear { stopTrailer() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background {
+                isSuspended = true
+                // Show the artwork until the trailer really runs again, so YouTube's paused overlay never shows.
+                isPlaying = false
+            }
+            if phase == .active { isSuspended = false }
+        }
     }
 
     @ViewBuilder
@@ -123,10 +134,11 @@ struct TrailerHero: View {
         switch source {
         case let .youtube(id):
             // YouTube shows its own overlay for the first seconds; reveal the video once that's gone.
-            YouTubeTrailerView(videoID: id, muted: isMuted,
-                               onPlaying: { reveal(after: .seconds(2.5)) }, onEnded: finish)
+            YouTubeTrailerView(videoID: id, muted: isMuted, paused: isSuspended,
+                               onPlaying: { reveal(after: .seconds(2.5)) }, onEnded: finish,
+                               onForcedMute: { isMuted = true })
         case let .file(url):
-            FileTrailerView(url: url, muted: isMuted,
+            FileTrailerView(url: url, muted: isMuted, paused: isSuspended,
                             onPlaying: { reveal(after: .zero) }, onEnded: finish)
         }
     }
@@ -175,8 +187,12 @@ struct TrailerHero: View {
 struct YouTubeTrailerView: UIViewRepresentable {
     let videoID: String
     let muted: Bool
+    /// True while the app is in the background; going back to false resumes the trailer.
+    let paused: Bool
     let onPlaying: () -> Void
     let onEnded: () -> Void
+    /// iOS may refuse to resume with sound without a tap; the trailer then continues muted.
+    let onForcedMute: () -> Void
 
     /// YouTube requires a valid https origin/referrer for embedded playback.
     private static let origin = "https://jellyfin-client.app"
@@ -189,23 +205,30 @@ struct YouTubeTrailerView: UIViewRepresentable {
         config.mediaTypesRequiringUserActionForPlayback = []
         config.allowsPictureInPictureMediaPlayback = false
         config.userContentController.add(context.coordinator, name: "trailer")
+        context.coordinator.html = html
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.isOpaque = false
         webView.backgroundColor = .black
         webView.scrollView.isScrollEnabled = false
         webView.isUserInteractionEnabled = false
-        context.coordinator.update(onPlaying: onPlaying, onEnded: onEnded)
+        webView.navigationDelegate = context.coordinator
+        context.coordinator.update(onPlaying: onPlaying, onEnded: onEnded, onForcedMute: onForcedMute)
         context.coordinator.muted = muted
+        context.coordinator.paused = paused
         webView.loadHTMLString(html, baseURL: URL(string: Self.origin))
         return webView
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        context.coordinator.update(onPlaying: onPlaying, onEnded: onEnded)
+        context.coordinator.update(onPlaying: onPlaying, onEnded: onEnded, onForcedMute: onForcedMute)
         if context.coordinator.muted != muted {
             context.coordinator.muted = muted
             webView.evaluateJavaScript("setMuted(\(muted))")
+        }
+        if context.coordinator.paused != paused {
+            context.coordinator.paused = paused
+            webView.evaluateJavaScript(paused ? "pauseTrailer()" : "resumeTrailer()")
         }
     }
 
@@ -214,14 +237,23 @@ struct YouTubeTrailerView: UIViewRepresentable {
         webView.loadHTMLString("", baseURL: nil)
     }
 
-    final class Coordinator: NSObject, WKScriptMessageHandler {
+    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         var muted = true
+        var paused = false
+        var html = ""
         private var onPlaying: (() -> Void)?
         private var onEnded: (() -> Void)?
+        private var onForcedMute: (() -> Void)?
 
-        func update(onPlaying: @escaping () -> Void, onEnded: @escaping () -> Void) {
+        func update(onPlaying: @escaping () -> Void, onEnded: @escaping () -> Void, onForcedMute: @escaping () -> Void) {
             self.onPlaying = onPlaying
             self.onEnded = onEnded
+            self.onForcedMute = onForcedMute
+        }
+
+        /// iOS can end the web view's process while the app is in the background; start the trailer again.
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            webView.loadHTMLString(html, baseURL: URL(string: YouTubeTrailerView.origin))
         }
 
         func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -229,7 +261,10 @@ struct YouTubeTrailerView: UIViewRepresentable {
             #if DEBUG
             NSLog("[Trailer] %@", "youtube \(body)")
             #endif
-            if let state = body["state"] as? Int {
+            if body["forcedMute"] != nil {
+                muted = true
+                onForcedMute?()
+            } else if let state = body["state"] as? Int {
                 if state == 1 { onPlaying?() }       // playing
                 if state == 0 { onEnded?() }         // ended
             } else if body["error"] != nil {
@@ -253,6 +288,17 @@ struct YouTubeTrailerView: UIViewRepresentable {
           function post(m){ try{ window.webkit.messageHandlers.trailer.postMessage(m) }catch(e){} }
           window.onerror = function(msg){ post({log: String(msg)}); };
           function setMuted(m){ if(!player||!player.mute){return} if(m){player.mute()}else{player.unMute();player.setVolume(100)} }
+          function pauseTrailer(){ if(player&&player.pauseVideo){ player.pauseVideo() } }
+          function resumeTrailer(){
+            if(!player||!player.playVideo){ return }
+            player.playVideo();
+            // Resuming with sound can be blocked without a tap: continue muted instead of staying paused.
+            setTimeout(function(){
+              if(player.getPlayerState && player.getPlayerState() !== 1 && !player.isMuted()){
+                player.mute(); post({forcedMute:true}); player.playVideo();
+              }
+            }, 1500);
+          }
           function onYouTubeIframeAPIReady(){
             player = new YT.Player('player', {
               videoId: '\(videoID)',
@@ -279,6 +325,8 @@ struct YouTubeTrailerView: UIViewRepresentable {
 struct FileTrailerView: UIViewRepresentable {
     let url: URL
     let muted: Bool
+    /// True while the app is in the background; going back to false resumes the trailer.
+    let paused: Bool
     let onPlaying: () -> Void
     let onEnded: () -> Void
 
@@ -289,6 +337,8 @@ struct FileTrailerView: UIViewRepresentable {
 
     final class Coordinator {
         var player: AVPlayer?
+        var paused = false
+        var ended = false
         var statusObservation: NSKeyValueObservation?
         var endObserver: NSObjectProtocol?
     }
@@ -311,13 +361,25 @@ struct FileTrailerView: UIViewRepresentable {
             if player.timeControlStatus == .playing { DispatchQueue.main.async { onPlaying() } }
         }
         context.coordinator.endObserver = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime, object: player.currentItem, queue: .main) { _ in onEnded() }
+            forName: .AVPlayerItemDidPlayToEndTime, object: player.currentItem, queue: .main) { [coordinator = context.coordinator] _ in
+                coordinator.ended = true
+                onEnded()
+            }
         player.play()
         return view
     }
 
     func updateUIView(_ view: PlayerView, context: Context) {
-        context.coordinator.player?.isMuted = muted
+        let coordinator = context.coordinator
+        coordinator.player?.isMuted = muted
+        if coordinator.paused != paused {
+            coordinator.paused = paused
+            if paused {
+                coordinator.player?.pause()
+            } else if !coordinator.ended {
+                coordinator.player?.play()
+            }
+        }
     }
 
     static func dismantleUIView(_ view: PlayerView, coordinator: Coordinator) {
