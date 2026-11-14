@@ -124,6 +124,10 @@ struct MediaDetailView: View {
                 } else if let runtime = item.runtimeText {
                     Text(runtime)
                 }
+                if !isSeries, let size = item.fileSizeText {
+                    Text(size)
+                        .accessibilityLabel("File size \(size)")
+                }
                 if let badge = item.videoQualityBadge {
                     Text(badge)
                         .font(.caption.weight(.bold))
@@ -522,8 +526,9 @@ struct EpisodeCell: View {
                         Text([episode.indexNumber.map { "\($0)." }, episode.name].compactMap { $0 }.joined(separator: " "))
                             .font(.subheadline.weight(.semibold))
                             .lineLimit(2)
-                        if let runtime = episode.runtimeText {
-                            Text(runtime).font(.footnote).foregroundStyle(.secondary)
+                        let details = [episode.runtimeText, episode.fileSizeText].compactMap { $0 }
+                        if !details.isEmpty {
+                            Text(details.joined(separator: " · ")).font(.footnote).foregroundStyle(.secondary)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)

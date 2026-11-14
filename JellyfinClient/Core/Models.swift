@@ -191,6 +191,11 @@ extension BaseItem {
     }
 
     var runtimeText: String? { runTimeTicks.map { Ticks.durationText($0) } }
+    /// Size of the original file on the server, e.g. "2,3 GB".
+    var fileSizeText: String? {
+        guard let size = primaryMediaSource?.size, size > 0 else { return nil }
+        return ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
+    }
 
     /// "S1 · E3" style label for episodes.
     var episodeLabel: String? {
