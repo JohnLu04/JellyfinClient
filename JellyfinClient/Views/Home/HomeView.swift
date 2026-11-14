@@ -69,7 +69,11 @@ struct HomeView: View {
                         }
                     }
                     .padding(.bottom, 24)
+                    // Full width even while only the title is shown (before the hero loads); otherwise the
+                    // scroll view shrinks to the title and the top buttons and spinner sit on the left.
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .ignoresSafeArea(edges: .top)
                 .appTopActions(floating: true)
                 .overlay {
