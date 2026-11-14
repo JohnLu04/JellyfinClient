@@ -431,6 +431,16 @@
         }
       }
     },
+    "Connect Seerr in Settings to also find movies and series you don't have yet.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbinde Seerr in den Einstellungen, um auch Filme und Serien zu finden, die du noch nicht hast."
+          }
+        }
+      }
+    },
     "Connect to your Jellyfin server": {
       "localizations": {
         "de": {
@@ -871,6 +881,26 @@
         }
       }
     },
+    "Finds titles in your libraries and suggests others from Seerr that you can request.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Findet Titel in deinen Bibliotheken und schlägt weitere von Seerr vor, die du anfragen kannst."
+          }
+        }
+      }
+    },
+    "Finds titles in your libraries. Connect Seerr in Settings to also find titles you don't have yet.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Findet Titel in deinen Bibliotheken. Verbinde Seerr in den Einstellungen, um auch Titel zu finden, die du noch nicht hast."
+          }
+        }
+      }
+    },
     "Format": {
       "localizations": {
         "de": {
@@ -937,6 +967,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Start"
+          }
+        }
+      }
+    },
+    "In Your Library": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In deiner Bibliothek"
           }
         }
       }
@@ -1237,6 +1277,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nicht verbunden"
+          }
+        }
+      }
+    },
+    "Not in your library yet": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Noch nicht in deiner Bibliothek"
           }
         }
       }
@@ -1641,6 +1691,16 @@
         }
       }
     },
+    "Request with Seerr": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mit Seerr anfragen"
+          }
+        }
+      }
+    },
     "Requested": {
       "localizations": {
         "de": {
@@ -1707,6 +1767,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sichern"
+          }
+        }
+      }
+    },
+    "Search": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Suchen"
           }
         }
       }

@@ -194,6 +194,16 @@ struct JellyfinAPI {
         return try await get("Items", query)
     }
 
+    /// Movies and series in the user's libraries matching `term`, with provider IDs to tell them apart from Seerr results.
+    func searchItems(_ term: String, limit: Int = 50) async throws -> [BaseItem] {
+        let result: ItemsResult = try await get("Items", [
+            "userId": userId, "searchTerm": term, "recursive": "true",
+            "includeItemTypes": "Movie,Series", "limit": String(limit),
+            "fields": Self.listFields + ",ProviderIds", "enableTotalRecordCount": "false",
+        ])
+        return result.items
+    }
+
     /// The user's favorite movies, series and episodes.
     func favoriteItems() async throws -> [BaseItem] {
         let result: ItemsResult = try await get("Items", [

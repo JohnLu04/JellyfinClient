@@ -45,6 +45,14 @@ struct MainTabView: View {
             Tab("Favorites", systemImage: "heart.fill") { FavoritesView() }
             Tab("Library", systemImage: "rectangle.stack.fill") { LibraryView() }
             Tab("Request", systemImage: "plus.rectangle.on.rectangle") { RequestTabView() }
+            // Set apart from the other tabs at the bottom right, with a magnifying glass.
+            Tab("Search", systemImage: "magnifyingglass", role: Self.searchRole) { SearchView() }
         }
+    }
+
+    /// iOS 27 shows a separate button at the trailing end of the tab bar for the "prominent" role;
+    /// on iOS 18–26 the search role does that.
+    private static var searchRole: TabRole {
+        if #available(iOS 27.0, *) { .prominent } else { .search }
     }
 }
