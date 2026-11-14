@@ -59,8 +59,7 @@ final class MPVCore: @unchecked Sendable {
         ("ytdl", "no"),
         ("input-default-bindings", "no"),
         ("cache", "yes"),
-        ("demuxer-max-bytes", "150MiB"),
-        ("demuxer-readahead-secs", "30"),
+        ("demuxer-max-back-bytes", "50MiB"),   // a little for seeking back; the rest goes to read-ahead
         ("network-timeout", "30"),
         ("sub-font-size", "46"),
         ("sub-border-size", "2.5"),
@@ -83,6 +82,11 @@ final class MPVCore: @unchecked Sendable {
         var wid = Int64(Int(bitPattern: Unmanaged.passUnretained(layer).toOpaque()))
         mpv_set_option(mpv, "wid", MPV_FORMAT_INT64, &wid)
         for (name, value) in Self.options { mpv_set_option_string(mpv, name, value) }
+        // Read-ahead chosen in Settings, within a memory ceiling that fits the device.
+        let buffer = String(Int(PlaybackBuffer.seconds))
+        mpv_set_option_string(mpv, "cache-secs", buffer)
+        mpv_set_option_string(mpv, "demuxer-readahead-secs", buffer)
+        mpv_set_option_string(mpv, "demuxer-max-bytes", "\(PlaybackBuffer.memoryLimitMiB)MiB")
         #if DEBUG
         mpv_request_log_messages(mpv, "warn")
         #endif

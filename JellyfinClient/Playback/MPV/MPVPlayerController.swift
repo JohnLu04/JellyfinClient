@@ -58,7 +58,9 @@ final class MPVPlayerController: PlaybackEngine {
 
     @ObservationIgnored let layer = MPVMetalLayer()
     @ObservationIgnored private var core: MPVCore?
-    @ObservationIgnored private var session: PlaybackSession?
+    /// For the "Video Details" panel (MPVStats.swift).
+    var statsCore: MPVCore? { core }
+    @ObservationIgnored private(set) var session: PlaybackSession?
     @ObservationIgnored private var url: URL
     @ObservationIgnored private let startSeconds: Double
     @ObservationIgnored private var addedSubtitles: [Int: Int] = [:]   // Jellyfin index → mpv track id

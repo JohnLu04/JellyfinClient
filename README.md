@@ -14,6 +14,8 @@ Native SwiftUI client for [Jellyfin](https://jellyfin.org) servers (10.9+). iOS 
 - **Two players, switchable any time in Settings:**
   - **mpv** (default, via [MPVKit](https://github.com/mpvkit/MPVKit), LGPL) – plays almost every format directly (MKV, HEVC, AV1, DTS, PGS …). In-player menus for **all audio tracks and subtitles**: embedded tracks switch instantly, external/text subtitles are loaded from the server, and while transcoding a switch fetches a new stream at the current position.
   - **Apple player** (AVPlayer) – PiP and AirPlay; anything the iPhone can't play natively is transcoded by the server.
+- **Buffer** – Settings → Buffer: how many seconds are loaded ahead, 10 s to 10 min (mpv `cache-secs`/`demuxer-readahead-secs` within a RAM-based memory ceiling; `preferredForwardBufferDuration` for the Apple player).
+- **Video details in mpv** – an info button in the player opens a live panel: play method, bitrate limit, container, file size, average/current bitrate, buffered seconds and size, download speed, codecs, resolution, frame rate, hardware decoding, dropped frames, audio channels and sample rate.
 - **Audio & subtitle choice** on every title page (server defaults pre-selected), used by both players.
 - The server decides via `PlaybackInfo` (with a device profile per player): direct play when possible, otherwise HLS remux/transcode. Start/progress/stop (incl. selected tracks) are reported so resume positions sync.
 - **Transcoding in 0.5 Mbit/s steps** – "Original" or a limit from 0.5 to 120 Mbit/s (stepper + slider). Default in Settings, overridable per title. Resolution is capped automatically at low bitrates.

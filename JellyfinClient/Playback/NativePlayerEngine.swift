@@ -16,7 +16,9 @@ final class NativePlayerEngine: NSObject, PlaybackEngine, AVPlayerViewController
     private var didStart = false
 
     init(url: URL, startSeconds: Double, session: PlaybackSession?) {
-        player = AVPlayer(playerItem: AVPlayerItem(url: url))
+        let item = AVPlayerItem(url: url)
+        item.preferredForwardBufferDuration = PlaybackBuffer.seconds   // Settings → Buffer
+        player = AVPlayer(playerItem: item)
         self.session = session
         self.startSeconds = startSeconds
         super.init()

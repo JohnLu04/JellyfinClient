@@ -8,6 +8,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKeys.downloadMbit) private var downloadMbit = 4.0
     @AppStorage(SettingsKeys.videoPlayer) private var videoPlayer = PlayerKind.defaultKind.rawValue
     @AppStorage(SettingsKeys.autoplayTrailers) private var autoplayTrailers = true
+    @AppStorage(SettingsKeys.bufferSeconds) private var bufferSeconds = PlaybackBuffer.defaultSeconds
     @State private var confirmSignOut = false
     @Environment(\.dismiss) private var dismiss
 
@@ -66,6 +67,23 @@ struct SettingsView: View {
                     Text("Streaming · \(Bitrate.label(streamingMbit))")
                 } footer: {
                     Text("Default for every title; you can still change it on each title's page. If a video's bitrate is above the limit, the server transcodes it.")
+                }
+
+                Section {
+                    Stepper(value: $bufferSeconds, in: PlaybackBuffer.range, step: PlaybackBuffer.step) {
+                        LabeledContent("Buffer Ahead", value: PlaybackBuffer.label(bufferSeconds))
+                    }
+                    Slider(value: $bufferSeconds, in: PlaybackBuffer.range, step: PlaybackBuffer.step) {
+                        Text("Buffer Ahead")
+                    } minimumValueLabel: {
+                        Text(PlaybackBuffer.label(PlaybackBuffer.range.lowerBound)).font(.caption)
+                    } maximumValueLabel: {
+                        Text(PlaybackBuffer.label(PlaybackBuffer.range.upperBound)).font(.caption)
+                    }
+                } header: {
+                    Text("Buffer · \(PlaybackBuffer.label(bufferSeconds))")
+                } footer: {
+                    Text("How much of the video is loaded ahead, up to 10 minutes. More buffer bridges longer network drops but uses more memory and data; with mpv the buffer is capped at \(PlaybackBuffer.memoryLimitMiB) MB on this iPhone. Applies from the next video you start.")
                 }
 
                 Section {

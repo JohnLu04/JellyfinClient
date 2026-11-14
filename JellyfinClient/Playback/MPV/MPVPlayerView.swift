@@ -93,6 +93,7 @@ struct MPVPlayerView: View {
     @State private var holdControls = false
     @State private var hideTask: Task<Void, Never>?
     @State private var showTracks = false
+    @State private var showStats = false
 
     var body: some View {
         ZStack {
@@ -119,6 +120,11 @@ struct MPVPlayerView: View {
                 tracksPanel
             }
 
+            if showStats && controller.errorMessage == nil {
+                MPVStatsPanel(controller: controller, onClose: closeStats)
+                    .transition(.opacity)
+            }
+
             if let error = controller.errorMessage {
                 errorView(error)
             }
@@ -140,6 +146,7 @@ struct MPVPlayerView: View {
                     .font(.headline)
                     .lineLimit(1)
                 Spacer()
+                statsButton
                 tracksButton
             }
             .padding(.horizontal)
@@ -189,6 +196,22 @@ struct MPVPlayerView: View {
         }
         .accessibilityLabel("Audio & Subtitles")
         .disabled((controller.audioOptions.isEmpty && controller.subtitleOptions.isEmpty) || controller.isSwitching)
+    }
+
+    /// Opens the live "Video Details" panel (bitrate, buffer, file size, codecs …).
+    private var statsButton: some View {
+        Button {
+            hideTask?.cancel()
+            holdControls = true
+            withAnimation(.easeOut(duration: 0.2)) { showStats = true }
+        } label: {
+            Image(systemName: "info.circle")
+                .font(.title3.weight(.semibold))
+                .frame(width: 48, height: 48)
+                .background(.ultraThinMaterial, in: Circle())
+                .contentShape(Circle())
+        }
+        .accessibilityLabel("Video Details")
     }
 
     private var tracksPanel: some View {
@@ -317,6 +340,12 @@ struct MPVPlayerView: View {
         scheduleHide()
     }
 
+    private func closeStats() {
+        withAnimation(.easeOut(duration: 0.2)) { showStats = false }
+        holdControls = false
+        scheduleHide()
+    }
+
     private func closeTracks() {
         withAnimation(.easeOut(duration: 0.2)) { showTracks = false }
         holdControls = false
@@ -384,5 +413,73 @@ struct MPVScrubBar: View {
 
     private static func timeText(_ seconds: Double) -> String {
         Ticks.clockText(Ticks.ticks(seconds.isFinite ? seconds : 0))
+    }
+}
+
+/// Live playback details over the video, refreshed every second while open.
+struct MPVStatsPanel: View {
+    let controller: MPVPlayerController
+    let onClose: () -> Void
+
+    @State private var sections: [PlaybackStatsSection] = []
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.55)
+                .ignoresSafeArea()
+                .onTapGesture(perform: onClose)
+
+            VStack(spacing: 0) {
+                HStack {
+                    Text("Video Details")
+                        .font(.headline)
+                    Spacer()
+                    Button("Done", action: onClose)
+                        .font(.headline)
+                        .padding(.vertical, 8)
+                        .contentShape(Rectangle())
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+
+                Divider().overlay(.white.opacity(0.2))
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        ForEach(sections) { section in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(section.title)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.white.opacity(0.6))
+                                ForEach(section.rows) { row in
+                                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                                        Text(row.label)
+                                            .foregroundStyle(.white.opacity(0.8))
+                                        Spacer(minLength: 8)
+                                        Text(row.value)
+                                            .fontWeight(.medium)
+                                            .monospacedDigit()
+                                            .multilineTextAlignment(.trailing)
+                                    }
+                                    .font(.subheadline)
+                                }
+                            }
+                        }
+                    }
+                    .padding(20)
+                }
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: 520, maxHeight: 560)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
+            .environment(\.colorScheme, .dark)
+            .padding(16)
+        }
+        .task {
+            while !Task.isCancelled {
+                sections = controller.readStats()
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
     }
 }

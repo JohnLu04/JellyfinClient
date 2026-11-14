@@ -11,6 +11,16 @@
         }
       }
     },
+    "%@ of %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ von %2$@"
+          }
+        }
+      }
+    },
     "%@ votes": {
       "localizations": {
         "de": {
@@ -91,6 +101,16 @@
         }
       }
     },
+    "%lld min %lld s": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld Min. %2$lld s"
+          }
+        }
+      }
+    },
     "%lld min / episode": {
       "localizations": {
         "de": {
@@ -107,6 +127,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Noch %lld Min."
+          }
+        }
+      }
+    },
+    "%lld s": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld s"
           }
         }
       }
@@ -351,12 +381,82 @@
         }
       }
     },
+    "Average Bitrate": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Durchschnittliche Bitrate"
+          }
+        }
+      }
+    },
     "Bitrate": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Bitrate"
+          }
+        }
+      }
+    },
+    "Bitrate Limit": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bitraten-Limit"
+          }
+        }
+      }
+    },
+    "Buffer": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Puffer"
+          }
+        }
+      }
+    },
+    "Buffer Ahead": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vorauspuffer"
+          }
+        }
+      }
+    },
+    "Buffer Size": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Puffergröße"
+          }
+        }
+      }
+    },
+    "Buffer · %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Puffer · %@"
+          }
+        }
+      }
+    },
+    "Buffered Ahead": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gepuffert"
           }
         }
       }
@@ -391,6 +491,16 @@
         }
       }
     },
+    "Channels": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kanäle"
+          }
+        }
+      }
+    },
     "Checking streaming services…": {
       "localizations": {
         "de": {
@@ -407,6 +517,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Schließen"
+          }
+        }
+      }
+    },
+    "Codec": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codec"
           }
         }
       }
@@ -481,6 +601,16 @@
         }
       }
     },
+    "Container": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Container"
+          }
+        }
+      }
+    },
     "Continue Watching": {
       "localizations": {
         "de": {
@@ -551,6 +681,16 @@
         }
       }
     },
+    "Current Bitrate": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktuelle Bitrate"
+          }
+        }
+      }
+    },
     "Decline": {
       "localizations": {
         "de": {
@@ -617,6 +757,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Anfrage löschen"
+          }
+        }
+      }
+    },
+    "Direct Play": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Direktwiedergabe"
+          }
+        }
+      }
+    },
+    "Direct Stream (remuxed)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Direkt-Stream (umverpackt)"
           }
         }
       }
@@ -711,6 +871,16 @@
         }
       }
     },
+    "Download Speed": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ladegeschwindigkeit"
+          }
+        }
+      }
+    },
     "Download all %lld episodes of %@?": {
       "localizations": {
         "de": {
@@ -757,6 +927,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Lädt die unveränderte Datei herunter. Benötigt auf dem Server die Berechtigung „Herunterladen von Medien erlauben“."
+          }
+        }
+      }
+    },
+    "Dropped Frames": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ausgelassene Bilder"
           }
         }
       }
@@ -841,6 +1021,16 @@
         }
       }
     },
+    "File Size": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dateigröße"
+          }
+        }
+      }
+    },
     "File size": {
       "localizations": {
         "de": {
@@ -911,6 +1101,16 @@
         }
       }
     },
+    "Frame Rate": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bildrate"
+          }
+        }
+      }
+    },
     "Genre": {
       "localizations": {
         "de": {
@@ -941,6 +1141,16 @@
         }
       }
     },
+    "Hardware Decoding": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hardware-Dekodierung"
+          }
+        }
+      }
+    },
     "Hide Available": {
       "localizations": {
         "de": {
@@ -967,6 +1177,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Start"
+          }
+        }
+      }
+    },
+    "How much of the video is loaded ahead, up to 10 minutes. More buffer bridges longer network drops but uses more memory and data; with mpv the buffer is capped at %lld MB on this iPhone. Applies from the next video you start.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wie viel vom Video im Voraus geladen wird, bis zu 10 Minuten. Mehr Puffer überbrückt längere Netzaussetzer, braucht aber mehr Speicher und Daten; mit mpv ist der Puffer auf diesem iPhone auf %lld MB begrenzt. Gilt ab dem nächsten gestarteten Video."
           }
         }
       }
@@ -1041,12 +1261,32 @@
         }
       }
     },
+    "Local File": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lokale Datei"
+          }
+        }
+      }
+    },
     "Max. bitrate": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Max. Bitrate"
+          }
+        }
+      }
+    },
+    "Memory Limit": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speicherlimit"
           }
         }
       }
@@ -1177,6 +1417,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Als Nächstes"
+          }
+        }
+      }
+    },
+    "No": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nein"
           }
         }
       }
@@ -1391,6 +1641,26 @@
         }
       }
     },
+    "Original Bitrate": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original-Bitrate"
+          }
+        }
+      }
+    },
+    "Original File Size": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Original-Dateigröße"
+          }
+        }
+      }
+    },
     "Original Files": {
       "localizations": {
         "de": {
@@ -1477,6 +1747,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Von Anfang an abspielen"
+          }
+        }
+      }
+    },
+    "Playback": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wiedergabe"
           }
         }
       }
@@ -1731,6 +2011,16 @@
         }
       }
     },
+    "Resolution": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auflösung"
+          }
+        }
+      }
+    },
     "Resume": {
       "localizations": {
         "de": {
@@ -1757,6 +2047,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Fortsetzen ab %@"
+          }
+        }
+      }
+    },
+    "Sample Rate": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abtastrate"
           }
         }
       }
@@ -2061,6 +2361,16 @@
         }
       }
     },
+    "Stream": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stream"
+          }
+        }
+      }
+    },
     "Streaming Quality · %@": {
       "localizations": {
         "de": {
@@ -2311,6 +2621,16 @@
         }
       }
     },
+    "Transcoding": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Transkodierung"
+          }
+        }
+      }
+    },
     "Trending": {
       "localizations": {
         "de": {
@@ -2421,6 +2741,26 @@
         }
       }
     },
+    "Video": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video"
+          }
+        }
+      }
+    },
+    "Video Details": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Videodetails"
+          }
+        }
+      }
+    },
     "Video Player": {
       "localizations": {
         "de": {
@@ -2451,12 +2791,32 @@
         }
       }
     },
+    "Waiting for Data": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wartet auf Daten"
+          }
+        }
+      }
+    },
     "Wrong username or password, or your session has expired.": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Falscher Benutzername oder falsches Passwort, oder deine Sitzung ist abgelaufen."
+          }
+        }
+      }
+    },
+    "Yes": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ja"
           }
         }
       }
