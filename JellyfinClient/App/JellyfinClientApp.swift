@@ -51,8 +51,11 @@ struct MainTabView: View {
     }
 
     /// iOS 27 shows a separate button at the trailing end of the tab bar for the "prominent" role;
-    /// on iOS 18–26 the search role does that.
+    /// on iOS 18–26 the search role does that. `.prominent` needs the iOS 27 SDK (Xcode 27, Swift 6.4).
     private static var searchRole: TabRole {
-        if #available(iOS 27.0, *) { .prominent } else { .search }
+        #if compiler(>=6.4)
+        if #available(iOS 27.0, *) { return .prominent }
+        #endif
+        return .search
     }
 }

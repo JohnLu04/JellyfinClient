@@ -44,6 +44,7 @@ jobs:
           else
             VERSION=""   # keep the version from the Xcode project
           fi
+          set -o pipefail   # a failed build must fail this step
           IPA="$(scripts/build-ipa.sh "$VERSION" "$GITHUB_RUN_NUMBER" | grep '\.ipa$' | tail -1)"
           echo "ipa=$IPA" >> "$GITHUB_OUTPUT"
           echo "sha=$(cat "$IPA.sha256")" >> "$GITHUB_OUTPUT"
