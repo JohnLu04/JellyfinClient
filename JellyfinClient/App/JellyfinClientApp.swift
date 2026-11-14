@@ -5,6 +5,7 @@ import SwiftUI
 struct JellyfinClientApp: App {
     @State private var appModel = AppModel()
     @State private var downloads = DownloadManager.shared
+    @State private var seerr = SeerrStore.shared
 
     init() {
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
@@ -16,6 +17,7 @@ struct JellyfinClientApp: App {
             RootView()
                 .environment(appModel)
                 .environment(downloads)
+                .environment(seerr)
         }
     }
 }
@@ -42,6 +44,7 @@ struct MainTabView: View {
             Tab("Home", systemImage: "house.fill") { HomeView() }
             Tab("Favorites", systemImage: "heart.fill") { FavoritesView() }
             Tab("Library", systemImage: "rectangle.stack.fill") { LibraryView() }
+            Tab("Request", systemImage: "plus.rectangle.on.rectangle") { RequestTabView() }
         }
     }
 }

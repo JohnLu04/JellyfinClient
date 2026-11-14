@@ -5,9 +5,11 @@ Native SwiftUI client for [Jellyfin](https://jellyfin.org) servers (10.9+). iOS 
 ## Features
 
 - **Login** – server address (`192.168.1.10:8096`, `https://…`, pasted web URL), username/password; session token stored in the Keychain.
-- **Home** – full-width hero carousel (artwork, title logo, genres, age rating, "Play S3 · E2", My List), Continue Watching and Next Up with series artwork, Recently Added per library, libraries.
-- **Title pages** (movies, series, episodes) – muted inline trailer in the header (German trailers preferred; YouTube via embedded player or local trailer files), Play/Resume and Download, description, cast, My List, Share (IMDb link), audio & quality options, Download Season, Episodes / More Like This tabs.
+- **Home** – full-width hero carousel (artwork, title logo, genres, age rating, "Play S3 · E2", favorite heart), Continue Watching and Next Up with series artwork, Recently Added per library, libraries.
+- **Title pages** (movies, series, episodes) – muted inline trailer in the header (German trailers preferred; YouTube via embedded player or local trailer files), Play/Resume and Download, description, cast, Favorite, Share (IMDb link), audio & quality options, Download Season, Episodes / More Like This tabs.
+- **Tabs** – Home, Favorites (favorite movies, series and episodes), Library and Request; Downloads and Settings open from buttons at the top right.
 - **Browsing** – libraries (movies, shows, folders), posters with paging, watched/progress badges.
+- **Request (Seerr)** – the Seerr integration from the Servarr app: Movies/Series filter, requests card (pending count; approve/decline/delete, new request search), networks (Netflix opens with Netflix's weekly Top 10 for Germany), Trending / Popular / Upcoming / Top Rated rows with "See All" lists (sort, genre, hide available), search, and title pages with IMDb/Rotten Tomatoes/TMDB ratings, streaming availability (JustWatch), seasons and episodes, and requests with season, server and quality-profile choice. Connect it under Settings → Seerr (address + API key, stored in the Keychain).
 - **Two players, switchable any time in Settings:**
   - **mpv** (default, via [MPVKit](https://github.com/mpvkit/MPVKit), LGPL) – plays almost every format directly (MKV, HEVC, AV1, DTS, PGS …). In-player menus for **all audio tracks and subtitles**: embedded tracks switch instantly, external/text subtitles are loaded from the server, and while transcoding a switch fetches a new stream at the current position.
   - **Apple player** (AVPlayer) – PiP and AirPlay; anything the iPhone can't play natively is transcoded by the server.
@@ -53,4 +55,4 @@ New Swift files dropped into `JellyfinClient/` are picked up by Xcode automatica
 - mpv has no Picture in Picture / AirPlay (use the Apple player for that); music, live TV and photo libraries are hidden.
 - The first build downloads MPVKit's prebuilt frameworks (~1 GB, cached afterwards).
 - Offline watch progress isn't synced back to the server.
-- Debug builds accept `JF_DEBUG_SERVER`, `JF_DEBUG_USER`, `JF_DEBUG_PASSWORD` launch environment variables to prefill the login form (used for automated simulator tests; not compiled into Release).
+- Debug builds accept `JF_DEBUG_SERVER`, `JF_DEBUG_USER`, `JF_DEBUG_PASSWORD` launch environment variables to prefill the login form, and `JF_DEBUG_SEERR` / `JF_DEBUG_SEERR_KEY` for the Seerr form (used for automated simulator tests; not compiled into Release).

@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AppModel.self) private var app
     @Environment(DownloadManager.self) private var downloads
+    @Environment(SeerrStore.self) private var seerr
     @AppStorage(SettingsKeys.streamingMbit) private var streamingMbit = 0.0
     @AppStorage(SettingsKeys.downloadMbit) private var downloadMbit = 4.0
     @AppStorage(SettingsKeys.videoPlayer) private var videoPlayer = PlayerKind.defaultKind.rawValue
@@ -19,6 +20,24 @@ struct SettingsView: View {
                     LabeledContent("Name", value: app.session?.serverName ?? "–")
                     LabeledContent("Address", value: app.session?.serverURL.absoluteString ?? "–")
                     LabeledContent("User", value: app.session?.userName ?? "–")
+                }
+
+                Section {
+                    NavigationLink {
+                        SeerrSetupView()
+                    } label: {
+                        HStack(spacing: 12) {
+                            ServiceIcon(size: 30)
+                            Text("Seerr")
+                            Spacer()
+                            Text(seerr.isConnected ? "Connected" : "Not connected")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } header: {
+                    Text("Requests")
+                } footer: {
+                    Text("Discover and request movies and series in the Request tab.")
                 }
 
                 Section {

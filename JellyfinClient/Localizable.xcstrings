@@ -11,6 +11,16 @@
         }
       }
     },
+    "%@ votes": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ Stimmen"
+          }
+        }
+      }
+    },
     "%@ · %@": {
       "localizations": {
         "de": {
@@ -21,12 +31,42 @@
         }
       }
     },
+    "%@ · %@ – %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · %2$@ – %3$@"
+          }
+        }
+      }
+    },
+    "%lld": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld"
+          }
+        }
+      }
+    },
     "%lld Seasons": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "%lld Staffeln"
+          }
+        }
+      }
+    },
+    "%lld episodes": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Folgen"
           }
         }
       }
@@ -51,12 +91,42 @@
         }
       }
     },
+    "%lld min / episode": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Min. / Folge"
+          }
+        }
+      }
+    },
     "%lld min left": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Noch %lld Min."
+          }
+        }
+      }
+    },
+    "%lld waiting for approval": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld warten auf Freigabe"
+          }
+        }
+      }
+    },
+    "%lld. %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$lld. %2$@"
           }
         }
       }
@@ -71,12 +141,32 @@
         }
       }
     },
+    "192.168.1.10:5055 or https://…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "192.168.1.10:5055 oder https://…"
+          }
+        }
+      }
+    },
     "192.168.1.10:8096 or https://…": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "192.168.1.10:8096 oder https://…"
+          }
+        }
+      }
+    },
+    "API Key": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "API-Schlüssel"
           }
         }
       }
@@ -111,6 +201,56 @@
         }
       }
     },
+    "Airs %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erscheint am %@"
+          }
+        }
+      }
+    },
+    "All": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle"
+          }
+        }
+      }
+    },
+    "All Available": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alles vorhanden"
+          }
+        }
+      }
+    },
+    "All Genres": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle Genres"
+          }
+        }
+      }
+    },
+    "All Netflix Series": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle Netflix-Serien"
+          }
+        }
+      }
+    },
     "Apple Player (AVPlayer)": {
       "localizations": {
         "de": {
@@ -137,6 +277,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Gilt für %@. Spuren lassen sich auch im Player umschalten."
+          }
+        }
+      }
+    },
+    "Approve": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Freigeben"
+          }
+        }
+      }
+    },
+    "Audience": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Publikum"
           }
         }
       }
@@ -181,6 +341,16 @@
         }
       }
     },
+    "Available": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verfügbar"
+          }
+        }
+      }
+    },
     "Bitrate": {
       "localizations": {
         "de": {
@@ -221,6 +391,16 @@
         }
       }
     },
+    "Checking streaming services…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Streamingdienste werden geprüft …"
+          }
+        }
+      }
+    },
     "Close": {
       "localizations": {
         "de": {
@@ -231,12 +411,62 @@
         }
       }
     },
+    "Connect": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbinden"
+          }
+        }
+      }
+    },
+    "Connect Seerr": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seerr verbinden"
+          }
+        }
+      }
+    },
     "Connect to your Jellyfin server": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Mit deinem Jellyfin-Server verbinden"
+          }
+        }
+      }
+    },
+    "Connect your Seerr server to discover new movies and series and request them.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbinde deinen Seerr-Server, um neue Filme und Serien zu entdecken und anzufragen."
+          }
+        }
+      }
+    },
+    "Connected": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbunden"
+          }
+        }
+      }
+    },
+    "Connected to Seerr %@.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mit Seerr %@ verbunden."
           }
         }
       }
@@ -257,6 +487,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Favoriten konnten nicht geladen werden"
+          }
+        }
+      }
+    },
+    "Couldn't load from Seerr. Pull to try again.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seerr konnte nicht geladen werden. Zum Aktualisieren nach unten ziehen."
           }
         }
       }
@@ -287,6 +527,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Von: "
+          }
+        }
+      }
+    },
+    "Critics": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kritiker"
+          }
+        }
+      }
+    },
+    "Decline": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ablehnen"
+          }
+        }
+      }
+    },
+    "Declined": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abgelehnt"
           }
         }
       }
@@ -331,12 +601,62 @@
         }
       }
     },
+    "Delete Request": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anfrage löschen"
+          }
+        }
+      }
+    },
     "Director: ": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Regie: "
+          }
+        }
+      }
+    },
+    "Disconnect": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trennen"
+          }
+        }
+      }
+    },
+    "Disconnect Seerr": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seerr trennen"
+          }
+        }
+      }
+    },
+    "Disconnect Seerr?": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seerr trennen?"
+          }
+        }
+      }
+    },
+    "Discover and request movies and series in the Request tab.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Im Request-Tab Filme und Serien entdecken und anfragen."
           }
         }
       }
@@ -431,6 +751,16 @@
         }
       }
     },
+    "Episode %lld": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Folge %lld"
+          }
+        }
+      }
+    },
     "Episodes": {
       "localizations": {
         "de": {
@@ -457,6 +787,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Geschätzte Größe"
+          }
+        }
+      }
+    },
+    "Everything loaded so far is already in your library.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alles bisher Geladene ist schon in deiner Bibliothek."
           }
         }
       }
@@ -501,12 +841,92 @@
         }
       }
     },
+    "Filter": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filter"
+          }
+        }
+      }
+    },
+    "Find something to request.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finde etwas zum Anfragen."
+          }
+        }
+      }
+    },
+    "Find the API key in Seerr under Settings → General → API Key. Works with Seerr, Jellyseerr and Overseerr.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Den API-Schlüssel findest du in Seerr unter Einstellungen → Allgemein → API-Schlüssel. Funktioniert mit Seerr, Jellyseerr und Overseerr."
+          }
+        }
+      }
+    },
     "Format": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Format"
+          }
+        }
+      }
+    },
+    "Genre": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Genre"
+          }
+        }
+      }
+    },
+    "Germany": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deutschland"
+          }
+        }
+      }
+    },
+    "Global": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weltweit"
+          }
+        }
+      }
+    },
+    "Hide Available": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vorhandene ausblenden"
+          }
+        }
+      }
+    },
+    "Hiding Available": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vorhandene ausgeblendet"
           }
         }
       }
@@ -571,6 +991,16 @@
         }
       }
     },
+    "Limited Series": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Miniserie"
+          }
+        }
+      }
+    },
     "Max. bitrate": {
       "localizations": {
         "de": {
@@ -591,12 +1021,32 @@
         }
       }
     },
+    "Movie Genres": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Film-Genres"
+          }
+        }
+      }
+    },
     "Movies": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Filme"
+          }
+        }
+      }
+    },
+    "Movies & Series": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filme & Serien"
           }
         }
       }
@@ -631,6 +1081,56 @@
         }
       }
     },
+    "Netflix's Top 10 couldn't be loaded right now.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Netflix Top 10 konnten gerade nicht geladen werden."
+          }
+        }
+      }
+    },
+    "Network": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sender"
+          }
+        }
+      }
+    },
+    "Networks": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sender"
+          }
+        }
+      }
+    },
+    "New Request": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neue Anfrage"
+          }
+        }
+      }
+    },
+    "Newest": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neueste"
+          }
+        }
+      }
+    },
     "Next Up": {
       "localizations": {
         "de": {
@@ -661,12 +1161,92 @@
         }
       }
     },
+    "No Requests": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Anfragen"
+          }
+        }
+      }
+    },
+    "No available requests.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine verfügbaren Anfragen."
+          }
+        }
+      }
+    },
+    "No pending requests.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine ausstehenden Anfragen."
+          }
+        }
+      }
+    },
     "No playable media source was returned by the server.": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Der Server hat keine abspielbare Medienquelle geliefert."
+          }
+        }
+      }
+    },
+    "No requests being processed.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Anfragen in Bearbeitung."
+          }
+        }
+      }
+    },
+    "Nobody has requested anything yet.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bisher hat niemand etwas angefragt."
+          }
+        }
+      }
+    },
+    "None": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine"
+          }
+        }
+      }
+    },
+    "Not connected": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht verbunden"
+          }
+        }
+      }
+    },
+    "Not included with any streaming service in %@ yet.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In %@ noch bei keinem Streamingdienst enthalten."
           }
         }
       }
@@ -691,12 +1271,42 @@
         }
       }
     },
+    "Nothing here right now.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gerade nichts hier."
+          }
+        }
+      }
+    },
     "Nothing here yet": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Hier ist noch nichts"
+          }
+        }
+      }
+    },
+    "Nothing waiting for approval": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nichts wartet auf Freigabe"
+          }
+        }
+      }
+    },
+    "Number %lld: %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Platz %1$lld: %2$@"
           }
         }
       }
@@ -741,12 +1351,52 @@
         }
       }
     },
+    "Part %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Teil %@"
+          }
+        }
+      }
+    },
+    "Partially Available": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Teilweise verfügbar"
+          }
+        }
+      }
+    },
+    "Parts %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Teile %@"
+          }
+        }
+      }
+    },
     "Password": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Passwort"
+          }
+        }
+      }
+    },
+    "Pending": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ausstehend"
           }
         }
       }
@@ -851,6 +1501,66 @@
         }
       }
     },
+    "Popular": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beliebt"
+          }
+        }
+      }
+    },
+    "Popular Movies": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beliebte Filme"
+          }
+        }
+      }
+    },
+    "Popular Series": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Beliebte Serien"
+          }
+        }
+      }
+    },
+    "Processing": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In Bearbeitung"
+          }
+        }
+      }
+    },
+    "Quality Profile": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qualitätsprofil"
+          }
+        }
+      }
+    },
+    "Radarr Server": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Radarr-Server"
+          }
+        }
+      }
+    },
     "Recently Added in %@": {
       "localizations": {
         "de": {
@@ -867,6 +1577,96 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aus Favoriten entfernen"
+          }
+        }
+      }
+    },
+    "Request": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Request"
+          }
+        }
+      }
+    },
+    "Request %lld Seasons": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Staffeln anfragen"
+          }
+        }
+      }
+    },
+    "Request 1 Season": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 Staffel anfragen"
+          }
+        }
+      }
+    },
+    "Request All %lld Seasons": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle %lld Staffeln anfragen"
+          }
+        }
+      }
+    },
+    "Request Movie": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Film anfragen"
+          }
+        }
+      }
+    },
+    "Request Title": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anfrage"
+          }
+        }
+      }
+    },
+    "Requested": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Angefragt"
+          }
+        }
+      }
+    },
+    "Requested by %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Angefragt von %@"
+          }
+        }
+      }
+    },
+    "Requests": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anfragen"
           }
         }
       }
@@ -901,6 +1701,26 @@
         }
       }
     },
+    "Save": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sichern"
+          }
+        }
+      }
+    },
+    "Search Movies & Series": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filme & Serien suchen"
+          }
+        }
+      }
+    },
     "Season": {
       "localizations": {
         "de": {
@@ -911,12 +1731,142 @@
         }
       }
     },
+    "Season %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Staffel %@"
+          }
+        }
+      }
+    },
+    "Season %lld": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Staffel %lld"
+          }
+        }
+      }
+    },
+    "Seasons": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Staffeln"
+          }
+        }
+      }
+    },
+    "Seasons %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Staffeln %@"
+          }
+        }
+      }
+    },
+    "Seasons to request": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anzufragende Staffeln"
+          }
+        }
+      }
+    },
+    "See All": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle anzeigen"
+          }
+        }
+      }
+    },
+    "Seerr": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seerr"
+          }
+        }
+      }
+    },
+    "Seerr Not Connected": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seerr nicht verbunden"
+          }
+        }
+      }
+    },
+    "Seerr Server": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seerr-Server"
+          }
+        }
+      }
+    },
+    "Seerr rejected the API key. Find it in Seerr under Settings → General → API Key.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seerr hat den API-Schlüssel abgelehnt. Du findest ihn in Seerr unter Einstellungen → Allgemein → API-Schlüssel."
+          }
+        }
+      }
+    },
+    "Seerr returned HTTP %lld.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seerr hat HTTP %lld zurückgegeben."
+          }
+        }
+      }
+    },
+    "Seerr sent an unexpected response.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seerr hat eine unerwartete Antwort geschickt."
+          }
+        }
+      }
+    },
     "Series": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Serien"
+          }
+        }
+      }
+    },
+    "Series Genres": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serien-Genres"
           }
         }
       }
@@ -1011,6 +1961,26 @@
         }
       }
     },
+    "Sonarr Server": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sonarr-Server"
+          }
+        }
+      }
+    },
+    "Specials": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Specials"
+          }
+        }
+      }
+    },
     "Storage": {
       "localizations": {
         "de": {
@@ -1027,6 +1997,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Streaming-Qualität · %@"
+          }
+        }
+      }
+    },
+    "Streaming availability couldn't be loaded.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Streaming-Verfügbarkeit konnte nicht geladen werden."
+          }
+        }
+      }
+    },
+    "Streaming data: JustWatch": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Streamingdaten: JustWatch"
+          }
+        }
+      }
+    },
+    "Streaming in %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Streaming in %@"
           }
         }
       }
@@ -1091,6 +2091,16 @@
         }
       }
     },
+    "The Seerr address is not valid.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Seerr-Adresse ist ungültig."
+          }
+        }
+      }
+    },
     "The next episodes of your series": {
       "localizations": {
         "de": {
@@ -1141,6 +2151,56 @@
         }
       }
     },
+    "To buy: %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zum Kaufen: %@"
+          }
+        }
+      }
+    },
+    "Top 10 This Week": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Top 10 dieser Woche"
+          }
+        }
+      }
+    },
+    "Top Rated": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bestbewertet"
+          }
+        }
+      }
+    },
+    "Top Rated Movies": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bestbewertete Filme"
+          }
+        }
+      }
+    },
+    "Top Rated Series": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bestbewertete Serien"
+          }
+        }
+      }
+    },
     "Track %lld": {
       "localizations": {
         "de": {
@@ -1181,6 +2241,16 @@
         }
       }
     },
+    "Trending": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Im Trend"
+          }
+        }
+      }
+    },
     "Try Again": {
       "localizations": {
         "de": {
@@ -1191,12 +2261,52 @@
         }
       }
     },
+    "Unknown": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unbekannt"
+          }
+        }
+      }
+    },
     "Unmute trailer": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Trailer-Ton einschalten"
+          }
+        }
+      }
+    },
+    "Untitled": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ohne Titel"
+          }
+        }
+      }
+    },
+    "Upcoming Movies": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kommende Filme"
+          }
+        }
+      }
+    },
+    "Upcoming Series": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kommende Serien"
           }
         }
       }
@@ -1251,6 +2361,26 @@
         }
       }
     },
+    "Volume %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vol. %@"
+          }
+        }
+      }
+    },
+    "Volumes %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vol. %@"
+          }
+        }
+      }
+    },
     "Wrong username or password, or your session has expired.": {
       "localizations": {
         "de": {
@@ -1297,6 +2427,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "Dein Benutzer darf nicht herunterladen oder umwandeln (HTTP 403)."
+          }
+        }
+      }
+    },
+    "media.movie": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Film"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Movie"
+          }
+        }
+      }
+    },
+    "media.series": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serie"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Series"
           }
         }
       }
