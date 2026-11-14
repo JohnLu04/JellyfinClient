@@ -32,7 +32,7 @@ xcodebuild \
   CODE_SIGNING_REQUIRED=NO \
   CODE_SIGN_IDENTITY="" \
   "${overrides[@]}" \
-  build
+  build >&2   # keep stdout for the IPA path only (Xcode also prints notes there)
 
 APP="$DERIVED/Build/Products/Release-iphoneos/JellyfinClient.app"
 APP_VERSION="$(plutil -extract CFBundleShortVersionString raw "$APP/Info.plist")"

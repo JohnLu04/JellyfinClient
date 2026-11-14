@@ -44,7 +44,7 @@ jobs:
           else
             VERSION=""   # keep the version from the Xcode project
           fi
-          IPA="$(scripts/build-ipa.sh "$VERSION" "$GITHUB_RUN_NUMBER" | tail -1)"
+          IPA="$(scripts/build-ipa.sh "$VERSION" "$GITHUB_RUN_NUMBER" | grep '\.ipa$' | tail -1)"
           echo "ipa=$IPA" >> "$GITHUB_OUTPUT"
           echo "sha=$(cat "$IPA.sha256")" >> "$GITHUB_OUTPUT"
           echo "Built $IPA (SHA-256 $(cat "$IPA.sha256"))" >> "$GITHUB_STEP_SUMMARY"
