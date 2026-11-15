@@ -56,6 +56,14 @@ actor AdaptiveStream {
     private var bufferHealthy = false
     private var lastSegment = -1
     private var upVotes = 0
+    /// How long the last segment of the current rung took to fetch, relative to how long it plays
+    /// (0.4 = it arrived in 40 % of its playing time). Measured directly, so it isn't fooled by small
+    /// segments that look slow over Wi-Fi. nil right after a switch.
+    private var fetchRatio: Double?
+    /// Set when a step up was a try beyond the measured rate; if it has to come back down quickly,
+    /// further tries pause for a while.
+    private var probeSegment: Int?
+    private var probeBlockedUntil = Date.distantPast
     /// The first segment after a switch or seek includes the server starting a transcode; its total time
     /// says nothing about whether the rung can keep up.
     private var freshStart = true
@@ -79,9 +87,9 @@ actor AdaptiveStream {
         let rungs = makeRungs(template: template, source: source, forMPV: forMPV)
         guard !rungs.isEmpty else { throw APIError.noPlayableSource }
         let saved = UserDefaults.standard.double(forKey: estimateKey)
-        let initial = saved > 0
-            ? (rungs.lastIndex { Double($0.totalBps) <= saved * 0.6 } ?? 0)
-            : (rungs.lastIndex { $0.totalBps <= 3_000_000 } ?? 0)
+        // Start modestly (quick start, no stall on a slower network than last time) and climb from there.
+        let startBps = min(saved > 0 ? saved * 0.5 : 2_500_000, 4_000_000)
+        let initial = rungs.lastIndex { Double($0.totalBps) <= startBps } ?? 0
         let stream = AdaptiveStream(api: api, rungs: rungs, forMPV: forMPV, initial: initial)
         let port = try await stream.startServer()
         if forMPV { try await stream.loadPlaylist(initial) }
@@ -93,7 +101,7 @@ actor AdaptiveStream {
 
     /// Ladder of total bitrates (video + audio), never above the original file's bitrate.
     nonisolated private static func makeRungs(template: URL, source: MediaSourceInfo, forMPV: Bool) -> [Rung] {
-        let ladder: [Double] = [0.7, 1.5, 3, 5, 8, 12, 20, 40]
+        let ladder: [Double] = [0.7, 1.5, 2.5, 4, 6, 8, 12, 20, 40]
         let sourceMbit = source.bitrate.map { Double($0) / 1_000_000 } ?? 20
         var totals = ladder.filter { $0 <= sourceMbit * 1.05 }
         if totals.isEmpty { totals = [ladder[0]] }
@@ -301,16 +309,46 @@ actor AdaptiveStream {
         return (min(20, target * 0.6), min(12, target * 0.35), min(5, target * 0.15))
     }
 
+    /// Picks the rung for the next segment.
+    ///
+    /// - Rate: with little buffer the lower of the fast and slow average with a 30 % margin; with more
+    ///   buffer the fast average with 15 % margin, and none once 30 s are buffered.
+    /// - Keeping up: if the current rung's segments arrive in well under their playing time and 30 s are
+    ///   buffered, the rung stays even if the rate looks lower (small segments are measured too slow).
+    /// - Trying higher: with the buffer comfortably full, it steps one rung up when the current rung's
+    ///   fetch time predicts the next one still arrives in under 85 % of its playing time.
+    /// - Buffer: below 12 s one rung down, below 5 s straight to the lowest (only after it was full once).
     private func decide() -> Int {
         var target = current
-        if let estimate {
-            let affordable = rungs.lastIndex { Double($0.totalBps) <= estimate * 0.75 } ?? 0
+        let comfortable = min(45, PlaybackBuffer.seconds * 0.8)
+        let rate = buffer < 15 ? estimate : (fastEstimate ?? estimate)
+        if let rate {
+            let margin = buffer < 15 ? 0.7 : (buffer < 30 ? 0.85 : 1.0)
+            var affordable = rungs.lastIndex { Double($0.totalBps) <= rate * margin } ?? 0
+            var probe = false
+            if affordable < current, buffer >= 30, (fetchRatio ?? 0) <= 0.85 {
+                affordable = current                                  // keeping up fine: stay
+            }
+            if affordable == current, bufferHealthy, buffer >= comfortable, current + 1 < rungs.count,
+               Date.now >= probeBlockedUntil, let ratio = fetchRatio,
+               ratio * Double(rungs[current + 1].totalBps) / Double(rungs[current].totalBps) <= 0.85 {
+                affordable = current + 1                              // room to try the next rung
+                probe = true
+            }
             if affordable < current {
-                target = affordable                                  // down right away
+                if let start = probeSegment, lastSegment - start <= 5 {
+                    probeBlockedUntil = .now.addingTimeInterval(120)  // the try didn't hold
+                }
+                probeSegment = nil
+                target = affordable                                   // down right away
                 upVotes = 0
             } else if affordable > current, bufferHealthy, buffer >= thresholds.up {
                 upVotes += 1
-                if upVotes >= 2 { target = current + 1; upVotes = 0 } // up one rung, once confirmed
+                if upVotes >= 2 {                                     // up one rung, once confirmed
+                    target = current + 1
+                    upVotes = 0
+                    probeSegment = probe ? lastSegment : nil
+                }
             } else {
                 upVotes = 0
             }
@@ -323,7 +361,8 @@ actor AdaptiveStream {
             }
         }
         if target != current {
-            switchTo(target, reason: String(format: "estimate %.1f Mbit/s, buffer %.0f s", (estimate ?? 0) / 1_000_000, buffer))
+            switchTo(target, reason: String(format: "rate %.1f Mbit/s, fetch %.0f %% of play time, buffer %.0f s",
+                                            (rate ?? 0) / 1_000_000, (fetchRatio ?? 0) * 100, buffer))
         }
         return current
     }
@@ -333,6 +372,7 @@ actor AdaptiveStream {
         abrLog.notice("Quality \(self.rungs[self.current].mbit) → \(self.rungs[rung].mbit) Mbit/s (\(reason, privacy: .public))")
         rungToStop = current
         current = rung
+        fetchRatio = nil
         freshStart = true
         upVotes = 0
         statusLock.withLock { $0.switches += 1 }
@@ -345,8 +385,9 @@ actor AdaptiveStream {
         let bits = Double(result.data.count * 8)
         guard result.data.count > 64_000 else { freshStart = false; return }
         var sample = bits / max(result.transferSeconds, 0.05)
-        if !freshStart, result.totalSeconds > segmentDuration {
-            sample = min(sample, bits / result.totalSeconds)
+        if !freshStart {
+            fetchRatio = result.totalSeconds / max(segmentDuration, 0.5)
+            if result.totalSeconds > segmentDuration { sample = min(sample, bits / result.totalSeconds) }
         }
         freshStart = false
         // A sharp drop counts right away; otherwise smooth it.
@@ -356,8 +397,8 @@ actor AdaptiveStream {
             fastEstimate = fastEstimate.map { $0 * 0.5 + sample * 0.5 } ?? sample
         }
         slowEstimate = slowEstimate.map { $0 * 0.85 + sample * 0.15 } ?? sample
-        let estimate = self.estimate
-        statusLock.withLock { $0.estimateBps = estimate }
+        let shown = fastEstimate ?? self.estimate
+        statusLock.withLock { $0.estimateBps = shown }
     }
 
     nonisolated private func publish(rung mbit: Double) {

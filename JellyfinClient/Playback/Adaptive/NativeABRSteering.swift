@@ -65,11 +65,17 @@ final class NativeABRSteering {
             }
             lastLog = (event.playbackStartDate, bytes, seconds)
         }
-        let estimate = [fast, slow].compactMap { $0 }.min()
+        // Little buffer: the lower average with a 30 % margin; more buffer: the fast one, less margin.
+        let estimate = buffer < 15 ? [fast, slow].compactMap { $0 }.min() : (fast ?? slow)
 
         var target = cap
         if let estimate {
-            let affordable = rungs.lastIndex { Double($0.totalBps) * 1.1 <= estimate * 0.75 } ?? 0
+            let margin = buffer < 15 ? 0.7 : (buffer < 30 ? 0.85 : 1.0)
+            var affordable = rungs.lastIndex { Double($0.totalBps) * 1.1 <= estimate * margin } ?? 0
+            // With the buffer comfortably full, allow one rung more; AVPlayer only takes it if it can.
+            if healthy, buffer >= min(45, PlaybackBuffer.seconds * 0.8) {
+                affordable = min(affordable + 1, rungs.count - 1)
+            }
             if affordable < cap {
                 target = affordable
                 upVotes = 0
