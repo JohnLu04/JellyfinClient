@@ -6,6 +6,21 @@ import os
 
 let downloadLog = Logger(subsystem: Bundle.main.bundleIdentifier ?? "JellyfinClient", category: "Downloads")
 
+/// Settings → Downloads → Download Method.
+enum DownloadEngineSetting: String, CaseIterable, Identifiable {
+    /// iOS' download service; switches to the in-app engine by itself if this install can't use it.
+    case automatic
+    /// Always iOS' background download service (like Streamyfin).
+    case system
+    /// Always inside the app (keeps the app awake in the background).
+    case inApp
+    var id: String { rawValue }
+
+    static var current: DownloadEngineSetting {
+        UserDefaults.standard.string(forKey: SettingsKeys.downloadEngine).flatMap(Self.init(rawValue:)) ?? .automatic
+    }
+}
+
 struct DownloadRecord: Codable, Identifiable, Equatable {
     enum State: String, Codable { case queued, downloading, completed, failed }
 
@@ -68,7 +83,8 @@ final class DownloadManager: NSObject {
     @ObservationIgnored var backgroundCompletionHandler: (() -> Void)?
 
     @ObservationIgnored private var session: URLSession!
-    @ObservationIgnored private var liveTasks: [String: URLSessionDownloadTask] = [:]
+    @ObservationIgnored private var liveTasks: [String: URLSessionTask] = [:]
+    @ObservationIgnored private let inApp = InAppDownloader()
     @ObservationIgnored private var isReconnected = false
     /// The index exists but can't be read yet (woken while the iPhone is locked and the file is still
     /// under complete protection). Nothing is saved or deleted until it can be read.
@@ -122,6 +138,66 @@ final class DownloadManager: NSObject {
         NotificationCenter.default.addObserver(
             self, selector: #selector(protectedDataAvailable),
             name: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(appDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification, object: nil)
+
+        inApp.events = InAppDownloader.Events(
+            progress: { id, task, written, expected in
+                Task { @MainActor in self.progressChanged(id: id, task: task, written: written, expected: expected) }
+            },
+            finished: { id, task, fileName, size in
+                Task { @MainActor in self.finished(id: id, task: task, fileName: fileName, size: size) }
+            },
+            ended: { id, task, error, status in
+                if let error { DownloadDiagnostics.log("\(id): transfer ended – \(DownloadDiagnostics.describe(error))") }
+                if let status { DownloadDiagnostics.log("\(id): server answered HTTP \(status)") }
+                Task { @MainActor in self.ended(id: id, task: task, error: error, httpStatus: status) }
+            })
+    }
+
+    // MARK: - Engine
+
+    /// Which engine new transfers use.
+    var usesInAppEngine: Bool {
+        switch DownloadEngineSetting.current {
+        case .inApp: true
+        case .system: false
+        case .automatic: UserDefaults.standard.bool(forKey: SettingsKeys.systemDownloadsBroken)
+        }
+    }
+
+    /// Detected automatically: this install can't receive files from iOS' download service.
+    var systemEngineDetectedBroken: Bool { UserDefaults.standard.bool(forKey: SettingsKeys.systemDownloadsBroken) }
+
+    /// Called when the Download Method setting changes: running transfers move to the new engine.
+    func downloadEngineChanged() {
+        DownloadDiagnostics.log("Download method set to \(DownloadEngineSetting.current.rawValue)")
+        restartActiveTransfers()
+    }
+
+    /// Cancels transfers of the engine that is no longer in use and queues them again.
+    private func restartActiveTransfers() {
+        let wantInApp = usesInAppEngine
+        for (id, task) in liveTasks where (task is URLSessionDataTask) != wantInApp {
+            liveTasks[id] = nil
+            task.cancel()
+            if let index = records.firstIndex(where: { $0.id == id }), records[index].isActive {
+                records[index].state = .queued
+                records[index].retryAfter = nil
+            }
+        }
+        saveIndex()
+        pump()
+    }
+
+    /// iOS' download service stored a finished file outside the app or couldn't create it: it can't
+    /// work on this install (re-signed apps with a random bundle id). Use the in-app engine from now on.
+    private func systemEngineFailed(id: String, error: NSError) {
+        guard DownloadEngineSetting.current == .automatic, !systemEngineDetectedBroken else { return }
+        UserDefaults.standard.set(true, forKey: SettingsKeys.systemDownloadsBroken)
+        DownloadDiagnostics.log("iOS download service can't deliver files to this install – switching to in-app downloads")
+        downloadLog.notice("System download engine unusable; switching to in-app engine")
     }
 
     /// Sideloading tools often sign with the provisioning profile's default data protection
@@ -199,6 +275,7 @@ final class DownloadManager: NSObject {
     func delete(id: String) {
         liveTasks.removeValue(forKey: id)?.cancel()
         try? FileManager.default.removeItem(at: Self.resumeDataURL(for: id))
+        InAppDownloader.removePart(for: id)
         speeds[id] = nil
         guard let index = records.firstIndex(where: { $0.id == id }) else { return }
         let record = records.remove(at: index)
@@ -220,8 +297,9 @@ final class DownloadManager: NSObject {
         }
         for task in tasks {
             guard let id = task.taskDescription,
-                  let index = records.firstIndex(where: { $0.id == id }), records[index].isActive else {
-                task.cancel()           // deleted while the app was gone
+                  let index = records.firstIndex(where: { $0.id == id }), records[index].isActive,
+                  !usesInAppEngine else {
+                task.cancel()           // deleted while the app was gone, or the in-app engine is in use
                 continue
             }
             liveTasks[id] = task
@@ -251,10 +329,17 @@ final class DownloadManager: NSObject {
                 ?? records.lastIndex(where: { $0.state == .queued }) {
             begin(at: index)
         }
-        if !hasActiveDownloads { DownloadKeepAlive.end() }
+        if !hasActiveDownloads {
+            DownloadKeepAlive.end()
+            BackgroundAudioKeepAlive.shared.stop()
+        }
     }
 
     private func begin(at index: Int) {
+        if usesInAppEngine {
+            beginInApp(at: index)
+            return
+        }
         let record = records[index]
         let id = record.id
         let task: URLSessionDownloadTask
@@ -303,9 +388,65 @@ final class DownloadManager: NSObject {
         DownloadKeepAlive.update(title: String(localized: "Downloading"), subtitle: record.name)
     }
 
+    /// The in-app engine: a data task writing straight into the download folder.
+    private func beginInApp(at index: Int) {
+        let record = records[index]
+        let id = record.id
+        guard let stored = SessionStorage.load() else {
+            fail(at: index, message: String(localized: "Not signed in."))
+            return
+        }
+        let api = JellyfinAPI(session: stored)
+        let url = record.mbit.map {
+            api.transcodedDownloadURL(itemId: id, mediaSourceId: record.mediaSourceId, mbit: $0)
+        } ?? api.originalDownloadURL(itemId: id)
+        var request = URLRequest(url: url)
+        request.setValue(api.authorizationHeader, forHTTPHeaderField: "Authorization")
+        // Original files can continue from the part file; a transcode is a new stream every time.
+        let resume = record.mbit == nil
+        try? FileManager.default.removeItem(at: Self.resumeDataURL(for: id))
+        let task = inApp.makeTask(id: id, request: request, resume: resume)
+        let existing = resume ? InAppDownloader.partSize(for: id) : 0
+        records[index].bytesWritten = existing
+        if let expected = record.expectedBytes, expected > 0 {
+            records[index].progress = min(0.99, Double(existing) / Double(expected))
+        } else {
+            records[index].progress = 0
+        }
+        DownloadDiagnostics.log("\(id): starting \(record.mbit.map { "transcoded \($0) Mbit/s" } ?? "original") download in the app"
+                                + (existing > 0 ? " from \(existing) bytes" : ""))
+
+        liveTasks[id] = task
+        attemptStartBytes[id] = existing
+        records[index].state = .downloading
+        let delay = record.retryAfter.map { $0.timeIntervalSinceNow } ?? 0
+        records[index].retryAfter = nil
+        saveIndex()
+        if delay > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard self?.liveTasks[id] === task else { return }    // deleted or replaced meanwhile
+                task.resume()
+            }
+        } else {
+            task.resume()
+        }
+        if UIApplication.shared.applicationState == .background { startBackgroundKeepAliveIfNeeded() }
+    }
+
+    @objc private func appDidEnterBackground() {
+        startBackgroundKeepAliveIfNeeded()
+    }
+
+    /// In-app downloads need the app running: keep it awake in the background while they're active.
+    private func startBackgroundKeepAliveIfNeeded() {
+        guard usesInAppEngine, hasActiveDownloads, !PlaybackCoordinator.shared.isPlayerOpen else { return }
+        BackgroundAudioKeepAlive.shared.start()
+    }
+
     @objc private func appDidBecomeActive() {
         Self.prepareDirectory()
         retryDeferredIndex()
+        BackgroundAudioKeepAlive.shared.stop()
         pump()
     }
 
@@ -331,7 +472,7 @@ final class DownloadManager: NSObject {
 
     // MARK: - Events from the session (main actor)
 
-    private func progressChanged(id: String, task: URLSessionDownloadTask, written: Int64, expected: Int64) {
+    private func progressChanged(id: String, task: URLSessionTask, written: Int64, expected: Int64) {
         guard liveTasks[id] === task, let index = records.firstIndex(where: { $0.id == id }) else { return }
         records[index].bytesWritten = written
         if records[index].errorMessage != nil { records[index].errorMessage = nil }     // data is flowing again
@@ -358,7 +499,7 @@ final class DownloadManager: NSObject {
         if now.timeIntervalSince(lastIndexSave) > 10 { saveIndex() }
     }
 
-    private func finished(id: String, task: URLSessionDownloadTask?, fileName: String, size: Int64) {
+    private func finished(id: String, task: URLSessionTask?, fileName: String, size: Int64) {
         if indexUnavailable {
             pendingCompletions.append((id, fileName, size))     // keep the file; filed after unlock
             return
@@ -411,7 +552,18 @@ final class DownloadManager: NSObject {
             try? resumeData.write(to: Self.resumeDataURL(for: id), options: .atomic)
         }
 
-        if let error, Self.isStorageError(error), !UIApplication.shared.isProtectedDataAvailable {
+        if task is URLSessionDownloadTask, let error, Self.isStorageError(error),
+           DownloadEngineSetting.current == .automatic {
+            // iOS' download service couldn't create or hand over the file. Switch engines and run this
+            // download again right away, without counting it as a failed attempt.
+            systemEngineFailed(id: id, error: error)
+            records[index].state = .queued
+            records[index].retryAfter = nil
+            records[index].errorMessage = nil
+            saveIndex()
+            restartActiveTransfers()
+            return
+        } else if let error, Self.isStorageError(error), !UIApplication.shared.isProtectedDataAvailable {
             // The iPhone is locked and its storage isn't writable for this download right now. Not a
             // real failure: try again in a minute (inside the download service, so this also happens
             // while the app is suspended) without using up the retry budget.
@@ -614,8 +766,8 @@ extension DownloadManager: URLSessionDownloadDelegate {
         try? fileManager.removeItem(at: destination)
         let moveError: NSError
         #if DEBUG
-        // Debug builds only: JF_DEBUG_FAIL_STORE=move (or =copy) simulates installs where the file iOS
-        // hands over can't be moved (or copied), to exercise the fallbacks.
+        // Debug builds only: JF_DEBUG_FAIL_STORE=move / copy / all simulates installs where the file iOS
+        // hands over can't be moved / copied / read at all, to exercise the fallbacks.
         let simulatedFailure = ProcessInfo.processInfo.environment["JF_DEBUG_FAIL_STORE"] ?? ""
         let noPermission = NSError(domain: NSCocoaErrorDomain, code: NSFileWriteNoPermissionError)
         #else
@@ -632,7 +784,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
         }
         do {
             try? fileManager.removeItem(at: destination)
-            if simulatedFailure == "copy" { throw noPermission }
+            if simulatedFailure == "copy" || simulatedFailure == "all" { throw noPermission }
             try fileManager.copyItem(at: location, to: destination)
             try? fileManager.removeItem(at: location)
             return
@@ -640,6 +792,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
             DownloadDiagnostics.log("\(id): copy failed – \(DownloadDiagnostics.describe(error as NSError)); streaming instead")
         }
         try? fileManager.removeItem(at: destination)
+        if simulatedFailure == "all" { throw noPermission }
         let input = try FileHandle(forReadingFrom: location)
         defer { try? input.close() }
         guard fileManager.createFile(atPath: destination.path, contents: nil) else { throw moveError }

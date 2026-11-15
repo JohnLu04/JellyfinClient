@@ -46,6 +46,8 @@ enum SettingsKeys {
     static let videoPlayer = "settings.videoPlayer"         // PlayerKind raw value
     static let autoplayTrailers = "settings.autoplayTrailers"
     static let bufferSeconds = "settings.bufferSeconds"
+    static let downloadEngine = "settings.downloadEngine"   // DownloadEngineSetting raw value
+    static let systemDownloadsBroken = "downloads.systemEngineBroken"
 }
 
 /// How many seconds of video the players load ahead (Settings → Buffer).
