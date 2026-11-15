@@ -1191,6 +1191,16 @@
         }
       }
     },
+    "Finished – saved when you unlock your iPhone": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fertig – wird beim Entsperren des iPhones gespeichert"
+          }
+        }
+      }
+    },
     "Format": {
       "localizations": {
         "de": {

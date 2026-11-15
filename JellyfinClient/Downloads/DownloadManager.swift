@@ -70,6 +70,13 @@ final class DownloadManager: NSObject {
     @ObservationIgnored private var session: URLSession!
     @ObservationIgnored private var liveTasks: [String: URLSessionDownloadTask] = [:]
     @ObservationIgnored private var isReconnected = false
+    /// The index exists but can't be read yet (woken while the iPhone is locked and the file is still
+    /// under complete protection). Nothing is saved or deleted until it can be read.
+    @ObservationIgnored private var indexUnavailable = false
+    /// Transfers finished while the index was unreadable; filed once it can be read.
+    @ObservationIgnored private var pendingCompletions: [(id: String, fileName: String, size: Int64)] = []
+    /// Finished files that couldn't be moved into the locked download folder yet.
+    @ObservationIgnored private var parkedFiles: [String: (url: URL, fileName: String, size: Int64)] = [:]
     @ObservationIgnored private var eventsDelivered = false
     @ObservationIgnored private var speedSamples: [String: (time: Date, bytes: Int64)] = [:]
     @ObservationIgnored private var attemptStartBytes: [String: Int64] = [:]
@@ -88,7 +95,7 @@ final class DownloadManager: NSObject {
 
     private override init() {
         super.init()
-        try? FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
+        Self.prepareDirectory()
         loadIndex()
 
         let config = URLSessionConfiguration.background(withIdentifier: Self.sessionIdentifier)
@@ -114,6 +121,24 @@ final class DownloadManager: NSObject {
         NotificationCenter.default.addObserver(
             self, selector: #selector(appDidBecomeActive),
             name: UIApplication.didBecomeActiveNotification, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(protectedDataAvailable),
+            name: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil)
+    }
+
+    /// Sideloading tools often sign with the provisioning profile's default data protection
+    /// ("complete"), which locks the app's files whenever the iPhone is locked, so a download that
+    /// finishes with the screen off couldn't be moved into place. The download folder and its files
+    /// use "until first unlock" instead (iOS' normal default), so they stay writable while locked.
+    /// Changing the class of existing files only works while unlocked, so this runs again on unlock.
+    nonisolated private static func prepareDirectory() {
+        let fileManager = FileManager.default
+        let protection: [FileAttributeKey: Any] = [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
+        try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true, attributes: protection)
+        try? fileManager.setAttributes(protection, ofItemAtPath: directory.path)
+        for name in (try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? [] {
+            try? fileManager.setAttributes(protection, ofItemAtPath: directory.appendingPathComponent(name).path)
+        }
     }
 
     // MARK: - Queries
@@ -191,6 +216,11 @@ final class DownloadManager: NSObject {
 
     /// Matches running transfers from the system to the index after (re)launch.
     private func reconnect(_ tasks: [URLSessionDownloadTask]) {
+        // Without the index the tasks can't be matched; never cancel them blindly. Retried on unlock.
+        guard !indexUnavailable else {
+            downloadLog.notice("Index not readable yet (device locked); reconnect deferred")
+            return
+        }
         for task in tasks {
             guard let id = task.taskDescription,
                   let index = records.firstIndex(where: { $0.id == id }), records[index].isActive else {
@@ -275,7 +305,69 @@ final class DownloadManager: NSObject {
     }
 
     @objc private func appDidBecomeActive() {
+        Self.prepareDirectory()
+        retryDeferredIndex()
+        fileParkedDownloads()
         pump()
+    }
+
+    @objc private func protectedDataAvailable() {
+        Self.prepareDirectory()
+        retryDeferredIndex()
+        fileParkedDownloads()
+    }
+
+    /// A transfer finished, but the download folder was locked; the file waits next to the system's
+    /// temporary copy until the iPhone is unlocked.
+    private func parked(id: String, task: URLSessionDownloadTask, url: URL, fileName: String, size: Int64) {
+        parkedFiles[id] = (url, fileName, size)
+        if !indexUnavailable, let index = records.firstIndex(where: { $0.id == id }) {
+            records[index].errorMessage = String(localized: "Finished – saved when you unlock your iPhone")
+            records[index].progress = 1
+        }
+        if UIApplication.shared.isProtectedDataAvailable { fileParkedDownloads() }
+    }
+
+    private func fileParkedDownloads() {
+        guard !indexUnavailable, !parkedFiles.isEmpty else { return }
+        for (id, file) in parkedFiles {
+            let destination = Self.directory.appendingPathComponent(file.fileName)
+            do {
+                try? FileManager.default.removeItem(at: destination)
+                try FileManager.default.moveItem(at: file.url, to: destination)
+                try? FileManager.default.setAttributes(
+                    [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: destination.path)
+                parkedFiles[id] = nil
+                finished(id: id, task: liveTasks[id], fileName: file.fileName, size: file.size)
+            } catch {
+                downloadLog.error("Still can't file \(id, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                // Unlocked and still failing: a real error, not data protection.
+                if UIApplication.shared.isProtectedDataAvailable {
+                    parkedFiles[id] = nil
+                    try? FileManager.default.removeItem(at: file.url)
+                    liveTasks[id] = nil
+                    if let index = records.firstIndex(where: { $0.id == id }) {
+                        fail(at: index, message: error.localizedDescription)
+                    }
+                    pump()
+                }
+            }
+        }
+    }
+
+    /// The iPhone was unlocked: read the index now, file what finished meanwhile and reconnect.
+    private func retryDeferredIndex() {
+        guard indexUnavailable else { return }
+        loadIndex()
+        guard !indexUnavailable else { return }
+        downloadLog.notice("Index readable again; filing \(self.pendingCompletions.count) finished download(s)")
+        let pending = pendingCompletions
+        pendingCompletions = []
+        for item in pending { finished(id: item.id, task: nil, fileName: item.fileName, size: item.size) }
+        session.getAllTasks { tasks in
+            let downloads = tasks.compactMap { $0 as? URLSessionDownloadTask }
+            Task { @MainActor in self.reconnect(downloads) }
+        }
     }
 
     // MARK: - Events from the session (main actor)
@@ -307,7 +399,11 @@ final class DownloadManager: NSObject {
         if now.timeIntervalSince(lastIndexSave) > 10 { saveIndex() }
     }
 
-    private func finished(id: String, task: URLSessionDownloadTask, fileName: String, size: Int64) {
+    private func finished(id: String, task: URLSessionDownloadTask?, fileName: String, size: Int64) {
+        if indexUnavailable {
+            pendingCompletions.append((id, fileName, size))     // keep the file; filed after unlock
+            return
+        }
         if let current = liveTasks[id], current !== task { current.cancel() }   // a duplicate restart lost the race
         liveTasks[id] = nil
         clearTransient(id)
@@ -332,6 +428,13 @@ final class DownloadManager: NSObject {
 
     /// The transfer ended without a file (network error, server error, cancellation).
     private func ended(id: String, task: URLSessionTask, error: NSError?, httpStatus: Int?) {
+        if indexUnavailable {
+            // Keep the partial data; after unlock the download is requeued and resumes from it.
+            if let resumeData = error?.userInfo[NSURLSessionDownloadTaskResumeData] as? Data {
+                try? resumeData.write(to: Self.resumeDataURL(for: id), options: .atomic)
+            }
+            return
+        }
         if let current = liveTasks[id], current !== task { return }     // an older attempt; ignore
         liveTasks[id] = nil
         clearTransient(id)
@@ -392,7 +495,7 @@ final class DownloadManager: NSObject {
         eventsDelivered = true
         // Before reconnecting, the next queued download can't start yet; iOS suspends the app as soon
         // as the handler is called, so hold it until then.
-        if isReconnected { callBackgroundCompletion() }
+        if isReconnected || indexUnavailable { callBackgroundCompletion() }
     }
 
     private func callBackgroundCompletion() {
@@ -445,12 +548,23 @@ final class DownloadManager: NSObject {
     }
 
     private func loadIndex() {
-        guard let data = try? Data(contentsOf: Self.indexURL),
-              let decoded = try? JSONDecoder().decode([DownloadRecord].self, from: data) else { return }
-        records = decoded
+        guard FileManager.default.fileExists(atPath: Self.indexURL.path) else {
+            indexUnavailable = false
+            return
+        }
+        do {
+            let data = try Data(contentsOf: Self.indexURL)
+            records = (try? JSONDecoder().decode([DownloadRecord].self, from: data)) ?? records
+            indexUnavailable = false
+        } catch {
+            // Exists but can't be read: protected while the iPhone is locked. Don't treat it as empty.
+            indexUnavailable = true
+            downloadLog.error("Index unreadable: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     private func saveIndex() {
+        guard !indexUnavailable else { return }     // would overwrite the real index with an empty list
         lastIndexSave = .now
         guard let data = try? JSONEncoder().encode(records) else { return }
         try? data.write(to: Self.indexURL, options: .atomic)
@@ -486,9 +600,23 @@ extension DownloadManager: URLSessionDownloadDelegate {
         let fileName = "\(id).\(suggestedExt.isEmpty ? "mp4" : suggestedExt.lowercased())"
         let destination = Self.directory.appendingPathComponent(fileName)
         do {
-            try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
+            Self.prepareDirectory()
             try? FileManager.default.removeItem(at: destination)
-            try FileManager.default.moveItem(at: location, to: destination)
+            do {
+                try FileManager.default.moveItem(at: location, to: destination)
+            } catch {
+                // Folder still locked (old protection class, device locked): park the file in the
+                // download service's own temp area, which is writable now, and file it on unlock.
+                let parked = location.deletingLastPathComponent().appendingPathComponent("parked-\(fileName)")
+                try? FileManager.default.removeItem(at: parked)
+                try FileManager.default.moveItem(at: location, to: parked)
+                let size = (try? parked.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
+                downloadLog.notice("Parked \(id, privacy: .public) until the iPhone is unlocked")
+                Task { @MainActor in self.parked(id: id, task: downloadTask, url: parked, fileName: fileName, size: size) }
+                return
+            }
+            try? FileManager.default.setAttributes(
+                [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: destination.path)
             var values = URLResourceValues()
             values.isExcludedFromBackup = true      // large and re-downloadable; keep it out of iCloud backups
             var url = destination
