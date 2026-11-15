@@ -73,6 +73,9 @@ final class NativePlayerEngine: NSObject, PlaybackEngine, AVPlayerViewController
                 }
                 player.play()
                 onReady?()
+                #if DEBUG
+                debugScript()
+                #endif
             }
         case .failed:
             #if DEBUG
@@ -100,6 +103,29 @@ final class NativePlayerEngine: NSObject, PlaybackEngine, AVPlayerViewController
             }
         }
     }
+
+    #if DEBUG
+    private func debugScript() {
+        guard let script = ProcessInfo.processInfo.environment["JF_DEBUG_SKIPS"] else { return }
+        let steps = script.split(separator: ",").compactMap { part -> (Int, Double)? in
+            let pair = part.split(separator: ":")
+            guard pair.count == 2, let at = Int(pair[0]), let by = Double(pair[1]) else { return nil }
+            return (at, by)
+        }
+        Task { [weak self] in
+            for second in 1...60 {
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, let item = self.player.currentItem else { return }
+                for step in steps where step.0 == second {
+                    print("[NativeDebug] skip \(step.1)")
+                    _ = await self.player.seek(to: CMTime(seconds: self.player.currentTime().seconds + step.1, preferredTimescale: 600))
+                }
+                let ranges = item.seekableTimeRanges.map { "\(Int($0.timeRangeValue.start.seconds))-\(Int($0.timeRangeValue.end.seconds))" }
+                print("[NativeDebug] t=\(second) time=\(String(format: "%.1f", self.player.currentTime().seconds)) duration=\(item.duration.seconds) rate=\(self.player.rate) status=\(self.player.timeControlStatus.rawValue) seekable=\(ranges)")
+            }
+        }
+    }
+    #endif
 
     nonisolated func playerViewController(_ playerViewController: AVPlayerViewController,
                                           willEndFullScreenPresentationWithAnimationCoordinator coordinator: UIViewControllerTransitionCoordinator) {

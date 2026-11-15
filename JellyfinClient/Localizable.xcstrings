@@ -2381,6 +2381,16 @@
         }
       }
     },
+    "Playback Position": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wiedergabeposition"
+          }
+        }
+      }
+    },
     "Playback error: %@": {
       "localizations": {
         "de": {

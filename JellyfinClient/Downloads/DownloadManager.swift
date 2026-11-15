@@ -221,9 +221,8 @@ final class DownloadManager: NSObject {
         saveIndex()
         DownloadDiagnostics.log("\(item.id): queued \(item.name ?? "") (\(record.qualityLabel)) with \(extras.filter { $0.kind == .audio }.count) extra audio track(s), \(extras.filter { $0.kind == .subtitle }.count) subtitle(s)")
 
-        if let posterURL = api.posterURL(for: item, maxWidth: 300) {
-            Task { await savePoster(from: posterURL, itemId: item.id) }
-        }
+        let posters = Self.posterCandidates(for: item, api: api)
+        Task { await savePoster(from: posters, itemId: item.id) }
         DownloadNotifications.requestAuthorizationIfNeeded()
         // Started from the foreground: the only moment iOS lets us ask to keep running afterwards.
         DownloadKeepAlive.begin(title: String(localized: "Downloading"), subtitle: item.name ?? "")
@@ -306,6 +305,7 @@ final class DownloadManager: NSObject {
         isReconnected = true
         pump()
         DownloadActivityController.appLaunched()
+        refreshEpisodePosters()
         if eventsDelivered { callBackgroundCompletion() }
     }
 
@@ -1025,16 +1025,55 @@ final class DownloadManager: NSObject {
 
     // MARK: - Storage
 
-    private func savePoster(from url: URL, itemId: String) async {
-        guard let (data, response) = try? await URLSession.shared.data(from: url),
-              (response as? HTTPURLResponse)?.statusCode == 200 else { return }
-        let name = "\(itemId)-poster.jpg"
-        do {
-            try data.write(to: Self.directory.appendingPathComponent(name), options: .atomic)
-            guard let index = records.firstIndex(where: { $0.id == itemId }) else { return }
-            records[index].posterFileName = name
-            saveIndex()
-        } catch {}
+    /// The poster for the download list: an episode shows its season's poster, or the series' if the
+    /// season has none, instead of the episode still; anything else its own poster.
+    private static func posterCandidates(for item: BaseItem, api: JellyfinAPI) -> [(url: URL, source: String)] {
+        var candidates: [(URL, String)] = []
+        if item.type == "Episode" {
+            if let seasonId = item.seasonId {
+                candidates.append((api.imageURL(itemId: seasonId, type: "Primary", tag: nil, maxWidth: 300), "season"))
+            }
+            if let seriesId = item.seriesId {
+                candidates.append((api.imageURL(itemId: seriesId, type: "Primary", tag: item.seriesPrimaryImageTag, maxWidth: 300), "series"))
+            }
+        }
+        if let own = api.posterURL(for: item, maxWidth: 300) { candidates.append((own, "item")) }
+        return candidates
+    }
+
+    /// Saves the first candidate the server has an image for.
+    private func savePoster(from candidates: [(url: URL, source: String)], itemId: String) async {
+        for candidate in candidates {
+            guard let (data, response) = try? await URLSession.shared.data(from: candidate.url),
+                  (response as? HTTPURLResponse)?.statusCode == 200, UIImage(data: data) != nil else { continue }
+            let name = "\(itemId)-poster.jpg"
+            do {
+                try data.write(to: Self.directory.appendingPathComponent(name), options: .atomic)
+                guard let index = records.firstIndex(where: { $0.id == itemId }) else { return }
+                records[index].posterFileName = name
+                records[index].posterSource = candidate.source
+                saveIndex()
+            } catch {}
+            return
+        }
+    }
+
+    /// Episodes downloaded before season/series posters were used still show the episode still:
+    /// fetch the right poster once (when the server is reachable; otherwise next launch).
+    private func refreshEpisodePosters() {
+        let pending = records.filter { $0.subtitle != nil && $0.posterSource == nil }.map(\.id)
+        guard !pending.isEmpty, let stored = SessionStorage.load() else { return }
+        let api = JellyfinAPI(session: stored)
+        Task {
+            for id in pending {
+                guard let item = try? await api.item(id: id) else { continue }
+                guard item.type == "Episode" else {
+                    if let index = records.firstIndex(where: { $0.id == id }) { records[index].posterSource = "item"; saveIndex() }
+                    continue
+                }
+                await savePoster(from: Self.posterCandidates(for: item, api: api), itemId: id)
+            }
+        }
     }
 
     private func loadIndex() {

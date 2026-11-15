@@ -109,6 +109,9 @@ final class MPVPlayerController: PlaybackEngine {
         }
         observeLifecycle()
         load(url, from: startSeconds)
+        #if DEBUG
+        debugScript()
+        #endif
         bufferReporter = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
@@ -364,6 +367,30 @@ final class MPVPlayerController: PlaybackEngine {
             }
         }
     }
+
+    #if DEBUG
+    /// JF_DEBUG_SKIPS="8:+600,14:-10" skips by the given seconds at the given times after start and
+    /// prints the position every second, to test seeking without tapping.
+    private func debugScript() {
+        guard let script = ProcessInfo.processInfo.environment["JF_DEBUG_SKIPS"] else { return }
+        let steps = script.split(separator: ",").compactMap { part -> (Double, Double)? in
+            let pair = part.split(separator: ":")
+            guard pair.count == 2, let at = Double(pair[0]), let by = Double(pair[1]) else { return nil }
+            return (at, by)
+        }
+        Task { [weak self] in
+            for second in 1...90 {
+                try? await Task.sleep(for: .seconds(1))
+                guard let self else { return }
+                for step in steps where Int(step.0) == second {
+                    print("[MPVDebug] skip \(step.1)")
+                    self.skip(by: step.1)
+                }
+                print("[MPVDebug] t=\(second) position=\(String(format: "%.1f", self.position)) duration=\(String(format: "%.1f", self.duration)) mpv=\(self.core?.getString("time-pos") ?? "nil")")
+            }
+        }
+    }
+    #endif
 
     private func debugLog(_ message: @autoclosure () -> String) {
         #if DEBUG

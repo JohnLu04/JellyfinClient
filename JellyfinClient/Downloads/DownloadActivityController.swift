@@ -46,6 +46,15 @@ enum DownloadActivityController {
 
     /// After launch: keep following an activity from before, or remove it if nothing is pending.
     static func appLaunched() {
+        #if DEBUG
+        if let id = ProcessInfo.processInfo.environment["JF_DEBUG_PLAY_DOWNLOAD"],
+           let record = DownloadManager.shared.record(for: id) {
+            Task {
+                try? await Task.sleep(for: .seconds(3))
+                DownloadManager.shared.play(record)
+            }
+        }
+        #endif
         if DownloadManager.shared.hasActiveDownloads {
             adoptExisting()
             if activity != nil { startLoop(); refresh(force: true) }

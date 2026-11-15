@@ -365,41 +365,55 @@ struct MPVPlayerView: View {
 
 /// Seek bar with elapsed/remaining time. Lives in its own view so the frequent time updates
 /// only redraw this bar.
+///
+/// A custom bar instead of SwiftUI's `Slider`: the slider reports the end of a drag through
+/// `onEditingChanged(false)`, which never comes when iOS cancels the touch (the bar sits right above
+/// the Home indicator, whose system gesture takes over swipes there). The bar then stayed frozen on the
+/// dragged time and the controls never hid again. A gesture state resets by itself when the gesture
+/// ends or is cancelled, so the bar always follows playback again.
 struct MPVScrubBar: View {
     let controller: MPVPlayerController
     let onScrubbing: (Bool) -> Void
 
-    @State private var isDragging = false
-    @State private var dragValue: Double = 0
+    /// The dragged-to fraction (0...1) while a finger is on the bar; nil otherwise.
+    @GestureState private var dragFraction: Double?
 
     var body: some View {
-        let shown = isDragging ? dragValue : controller.position
         let duration = max(controller.duration, 1)
+        let shown = dragFraction.map { $0 * duration } ?? min(max(controller.position, 0), duration)
+        let isDragging = dragFraction != nil
         VStack(spacing: 4) {
-            Slider(
-                value: Binding(
-                    get: { min(shown, duration) },
-                    set: { value in
-                        if isDragging {
-                            dragValue = value
-                        } else {
-                            // A tap on the track changes the value without a drag: seek right away.
-                            controller.seek(to: value)
-                        }
-                    }),
-                in: 0...duration
-            ) { editing in
-                if editing {
-                    dragValue = controller.position
-                    isDragging = true
-                    onScrubbing(true)
-                } else {
-                    controller.seek(to: dragValue)
-                    isDragging = false
-                    onScrubbing(false)
+            GeometryReader { geometry in
+                let width = max(geometry.size.width, 1)
+                let fraction = shown / duration
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(.white.opacity(0.25))
+                        .frame(height: isDragging ? 8 : 4)
+                    Capsule()
+                        .fill(.white)
+                        .frame(width: max(width * fraction, 0), height: isDragging ? 8 : 4)
+                    Circle()
+                        .fill(.white)
+                        .frame(width: isDragging ? 22 : 14, height: isDragging ? 22 : 14)
+                        .shadow(color: .black.opacity(0.3), radius: 2)
+                        .offset(x: min(max(width * fraction - (isDragging ? 11 : 7), -4), width - (isDragging ? 18 : 10)))
                 }
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .updating($dragFraction) { value, state, _ in
+                            state = min(max(value.location.x / width, 0), 1)
+                        }
+                        .onEnded { value in
+                            // Also a plain tap: jump to where the bar was touched.
+                            controller.seek(to: min(max(value.location.x / width, 0), 1) * duration)
+                        }
+                )
+                .animation(.easeOut(duration: 0.15), value: isDragging)
             }
-            .tint(.white)
+            .frame(height: 30)
 
             HStack {
                 Text(Self.timeText(shown))
@@ -408,6 +422,17 @@ struct MPVScrubBar: View {
             }
             .font(.caption.monospacedDigit())
             .foregroundStyle(.white.opacity(0.8))
+        }
+        .onChange(of: isDragging) { _, dragging in onScrubbing(dragging) }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Playback Position")
+        .accessibilityValue(Self.timeText(shown))
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: controller.skip(by: 10)
+            case .decrement: controller.skip(by: -10)
+            @unknown default: break
+            }
         }
     }
 

@@ -57,6 +57,9 @@ struct DownloadRecord: Codable, Identifiable, Equatable {
     var mediaSourceId: String?
     var fileName: String?
     var posterFileName: String?
+    /// Whose poster was saved: "season" or "series" for episodes (instead of the episode still), "item".
+    /// Episodes saved before this existed get theirs replaced once (see `DownloadManager`).
+    var posterSource: String? = nil
     var state: State
     var progress: Double
     var bytesWritten: Int64
