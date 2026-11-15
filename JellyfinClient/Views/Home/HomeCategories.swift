@@ -15,6 +15,8 @@ struct HomeCategory: Identifiable {
     let id: String
     let title: LocalizedStringKey
     let queries: [Query]
+    /// Holiday/event rows: the last day they're shown.
+    var until: Date? = nil
 }
 
 enum HomeCategories {
@@ -163,7 +165,8 @@ struct HomeCategoriesSection: View {
         guard seerr.isConnected else {
             return genreRows.map { .library(id: "genre-\($0.title)", title: $0.title, items: $0.items) }
         }
-        return HomeCategories.shuffledForLaunch.map { .seerr($0) }
+        // Holiday/event rows first, in their fixed order; the rest shuffled.
+        return (HomeSeasonal.active() + HomeCategories.shuffledForLaunch).map { .seerr($0) }
     }
 
     var body: some View {
@@ -228,11 +231,16 @@ private struct HomeSeerrCategoryRow: View {
 
     @State private var items: [DiscoverItem]?
 
+    /// "Until 26 Dec" under holiday rows.
+    private var untilText: String? {
+        category.until.map { String(localized: "Until \($0.formatted(.dateTime.day().month(.abbreviated)))") }
+    }
+
     var body: some View {
         Group {
             if let items {
                 if items.count >= 5 {
-                    HomeRowContainer(title: category.title) {
+                    HomeRowContainer(title: category.title, subtitle: untilText) {
                         ForEach(items) { item in
                             Button { onOpen(item) } label: { HomeDiscoverCard(item: item) }
                                 .buttonStyle(.plain)
@@ -244,7 +252,7 @@ private struct HomeSeerrCategoryRow: View {
                 }
             } else {
                 // While loading: a placeholder of the final size, so nothing jumps when it arrives.
-                HomeRowContainer(title: category.title) {
+                HomeRowContainer(title: category.title, subtitle: untilText) {
                     ForEach(0..<4, id: \.self) { _ in HomeDiscoverCard.placeholder }
                 }
                 .redacted(reason: .placeholder)
@@ -262,10 +270,12 @@ private struct HomeSeerrCategoryRow: View {
 /// Section title and a horizontally scrolling row, like the other Home rows.
 struct HomeRowContainer<Content: View>: View {
     let title: Text
+    var subtitle: String?
     @ViewBuilder let content: () -> Content
 
-    init(title: LocalizedStringKey, @ViewBuilder content: @escaping () -> Content) {
+    init(title: LocalizedStringKey, subtitle: String? = nil, @ViewBuilder content: @escaping () -> Content) {
         self.title = Text(title)
+        self.subtitle = subtitle
         self.content = content
     }
 
@@ -276,9 +286,14 @@ struct HomeRowContainer<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            title
-                .font(.title2.bold())
-                .padding(.horizontal)
+            VStack(alignment: .leading, spacing: 2) {
+                title
+                    .font(.title2.bold())
+                if let subtitle {
+                    Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 14) { content() }
                     .padding(.horizontal)

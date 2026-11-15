@@ -571,6 +571,16 @@
         }
       }
     },
+    "Carnival: Comedies for the Crazy Days": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Helau & Alaaf: Komödien für die tollen Tage"
+          }
+        }
+      }
+    },
     "Cast: ": {
       "localizations": {
         "de": {
@@ -607,6 +617,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Qualität wählen …"
+          }
+        }
+      }
+    },
+    "Christmas Movies": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weihnachtsfilme"
+          }
+        }
+      }
+    },
+    "Christmas with the Family": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weihnachten mit der Familie"
           }
         }
       }
@@ -787,6 +817,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Favoriten konnten nicht geändert werden."
+          }
+        }
+      }
+    },
+    "Cozy Christmas Romances": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kuschelige Weihnachtsromanzen"
           }
         }
       }
@@ -1191,6 +1231,16 @@
         }
       }
     },
+    "Easter: The Great Bible Epics": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zu Ostern: Die großen Bibelfilme"
+          }
+        }
+      }
+    },
     "Episode %lld": {
       "localizations": {
         "de": {
@@ -1461,6 +1511,36 @@
         }
       }
     },
+    "Halloween Horror": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Halloween-Horror"
+          }
+        }
+      }
+    },
+    "Halloween for the Whole Family": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Halloween für die ganze Familie"
+          }
+        }
+      }
+    },
+    "Happy Easter": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Frohe Ostern"
+          }
+        }
+      }
+    },
     "Hardware Decoding": {
       "localizations": {
         "de": {
@@ -1641,6 +1721,16 @@
         }
       }
     },
+    "May the 4th: Adventures in Space": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "May the 4th: Abenteuer im Weltall"
+          }
+        }
+      }
+    },
     "Memory Limit": {
       "localizations": {
         "de": {
@@ -1807,6 +1897,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Neue Anfrage"
+          }
+        }
+      }
+    },
+    "New Year's Eve & New Year": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Silvester & Neujahr"
           }
         }
       }
@@ -2287,6 +2387,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Beliebte Serien"
+          }
+        }
+      }
+    },
+    "Pride Month": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pride Month"
           }
         }
       }
@@ -2931,6 +3041,16 @@
         }
       }
     },
+    "Summer, Sun, Beach": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sommer, Sonne, Strand"
+          }
+        }
+      }
+    },
     "Superhero Movies": {
       "localizations": {
         "de": {
@@ -2987,6 +3107,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Die Seerr-Adresse ist ungültig."
+          }
+        }
+      }
+    },
+    "The Wall, the GDR and German History": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mauer, DDR und deutsche Geschichte"
           }
         }
       }
@@ -3251,6 +3381,16 @@
         }
       }
     },
+    "Until %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nur bis %@"
+          }
+        }
+      }
+    },
     "Untitled": {
       "localizations": {
         "de": {
@@ -3297,6 +3437,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Benutzername"
+          }
+        }
+      }
+    },
+    "Valentine's Day: Movies to Fall in Love": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Valentinstag: Filme zum Verlieben"
           }
         }
       }
