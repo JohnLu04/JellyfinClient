@@ -19,6 +19,12 @@ let downloadLog = Logger(subsystem: Bundle.main.bundleIdentifier ?? "JellyfinCli
 /// - **Transcodes** are fetched as 24-second HLS segments (two at a time) appended to one fragmented MP4, so only the
 ///   segment in flight is lost; Jellyfin can't resume a progressive transcode.
 /// - Extra audio tracks and subtitles follow the video as separate files.
+///
+/// iOS treats transfers that a background session starts while the app is in the background as
+/// "discretionary" and postpones them, often until the app is opened again. A transcode starts a new
+/// transfer for every segment, so while the keep-alive (see `DownloadKeepAlive`) keeps the app running
+/// in the background, new transfers go through an ordinary in-app session instead and start at once.
+/// When iOS ends the keep-alive, they are handed back to the background session.
 @Observable @MainActor
 final class DownloadManager: NSObject {
     static let shared = DownloadManager()
@@ -39,6 +45,14 @@ final class DownloadManager: NSObject {
     @ObservationIgnored var backgroundCompletionHandler: (() -> Void)?
 
     @ObservationIgnored private var session: URLSession!
+    /// For transfers started while the app is kept running in the background (see the type's notes).
+    @ObservationIgnored private var inAppSession: URLSession!
+    /// Transfers running in `inAppSession`; they end with the app, so they are handed over in time.
+    @ObservationIgnored private var inAppTasks: Set<ObjectIdentifier> = []
+    /// Transfers cancelled on purpose (handed over, or a duplicate); their end is not a failure.
+    @ObservationIgnored private var abandonedTasks: Set<ObjectIdentifier> = []
+    /// iOS ended the keep-alive: no new in-app transfers until the app is back in the foreground.
+    @ObservationIgnored private var inAppBlocked = false
     /// Running transfers by key (a transcode has up to `segmentPipeline` segments in flight).
     @ObservationIgnored private var liveTasks: [String: URLSessionTask] = [:]
     /// Bytes received so far by segments in flight, for the progress bar.
@@ -102,6 +116,12 @@ final class DownloadManager: NSObject {
         // while the app was gone; their pending events are delivered right after this.
         session = URLSession(configuration: config, delegate: self, delegateQueue: queue)
 
+        let inAppConfig = URLSessionConfiguration.default
+        inAppConfig.timeoutIntervalForRequest = 300
+        inAppConfig.requestCachePolicy = .reloadIgnoringLocalCacheData
+        inAppConfig.urlCache = nil
+        inAppSession = URLSession(configuration: inAppConfig, delegate: self, delegateQueue: queue)
+
         session.getAllTasks { tasks in
             let downloads = tasks.compactMap { $0 as? URLSessionDownloadTask }
             Task { @MainActor in self.reconnect(downloads) }
@@ -110,6 +130,9 @@ final class DownloadManager: NSObject {
         NotificationCenter.default.addObserver(
             self, selector: #selector(appDidBecomeActive),
             name: UIApplication.didBecomeActiveNotification, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(appDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification, object: nil)
         NotificationCenter.default.addObserver(
             self, selector: #selector(protectedDataAvailable),
             name: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil)
@@ -398,36 +421,126 @@ final class DownloadManager: NSObject {
 
         var request = URLRequest(url: url)
         request.setValue(api.authorizationHeader, forHTTPHeaderField: "Authorization")
+        let inApp = useInAppSession
+        let transferSession: URLSession = inApp ? inAppSession : session
         let task: URLSessionDownloadTask
         if let resumeData = try? Data(contentsOf: Self.resumeDataURL(for: key)) {
             // Picks up the bytes already on disk instead of starting over.
-            task = session.downloadTask(withResumeData: resumeData)
+            task = transferSession.downloadTask(withResumeData: resumeData)
             try? FileManager.default.removeItem(at: Self.resumeDataURL(for: key))
             DownloadDiagnostics.log("\(id): resuming \(what)")
         } else {
-            task = session.downloadTask(with: request)
+            task = transferSession.downloadTask(with: request)
             if part == .original {
                 records[index].bytesWritten = 0
                 records[index].progress = 0
             }
-            DownloadDiagnostics.log("\(id): starting \(what)")
+            DownloadDiagnostics.log("\(id): starting \(what)\(inApp ? " (in the app, kept running in the background)" : "")")
         }
         task.taskDescription = key
-        // A retry waits out its backoff inside the system's download service, so it still happens
-        // when the app is suspended in the background.
-        if let retryAfter = record.retryAfter, retryAfter > .now { task.earliestBeginDate = retryAfter }
         if part == .original, let expected = record.expectedBytes, expected > 0 {
             task.countOfBytesClientExpectsToReceive = expected
         }
         liveTasks[key] = task
         if attemptStartBytes[id] == nil { attemptStartBytes[id] = records[index].bytesWritten }
         records[index].state = .downloading
-        task.resume()
+        let delay = record.retryAfter.map { $0.timeIntervalSinceNow } ?? 0
+        if inApp {
+            inAppTasks.insert(ObjectIdentifier(task))
+            // The in-app session has no delayed start; wait here (a cancelled task ignores resume()).
+            if delay > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak task] in task?.resume() }
+            } else {
+                task.resume()
+            }
+        } else {
+            // A retry waits out its backoff inside the system's download service, so it still happens
+            // when the app is suspended in the background.
+            if delay > 0 { task.earliestBeginDate = record.retryAfter }
+            task.resume()
+        }
+    }
+
+    // MARK: - Background: in-app transfers while kept running
+
+    /// New transfers go through the in-app session while the app is in the background but kept
+    /// running; in the foreground the background session starts them right away (and they survive
+    /// the app being suspended or closed).
+    private var useInAppSession: Bool {
+        UIApplication.shared.applicationState == .background && DownloadKeepAlive.isRunning && !inAppBlocked
+    }
+
+    /// The keep-alive started or ended.
+    func keepAliveChanged(running: Bool) {
+        if running {
+            inAppBlocked = false
+        } else {
+            handOverInAppTransfers(reason: "the background keep-alive ended")
+        }
+    }
+
+    @objc private func appDidEnterBackground() {
+        if DownloadKeepAlive.isRunning {
+            DownloadDiagnostics.log("App in the background – kept running, downloads continue")
+        } else {
+            DownloadDiagnostics.log("App in the background without keep-alive – iOS' download service continues, but may postpone new parts")
+        }
+    }
+
+    /// The app is about to be suspended: cancel the in-app transfers and start them again in the
+    /// background session (originals continue from where they were), so iOS carries on with them.
+    private func handOverInAppTransfers(reason: String) {
+        let moving = liveTasks.filter { inAppTasks.contains(ObjectIdentifier($0.value)) }
+        guard !moving.isEmpty else { return }
+        if UIApplication.shared.applicationState == .background { inAppBlocked = true }
+        DownloadDiagnostics.log("Handing \(moving.count) transfer(s) to iOS' download service – \(reason)")
+        // A few seconds to finish the hand-over before iOS suspends the app.
+        var assertion = UIBackgroundTaskIdentifier.invalid
+        assertion = UIApplication.shared.beginBackgroundTask(withName: "Download hand-over") {
+            UIApplication.shared.endBackgroundTask(assertion)
+        }
+        var waiting = 0
+        func done() {
+            waiting -= 1
+            guard waiting <= 0 else { return }
+            saveIndex()
+            pump()
+            if assertion != .invalid { UIApplication.shared.endBackgroundTask(assertion); assertion = .invalid }
+        }
+        waiting = 1
+        for (key, task) in moving {
+            liveTasks[key] = nil
+            inflightBytes[key] = nil
+            inAppTasks.remove(ObjectIdentifier(task))
+            abandonedTasks.insert(ObjectIdentifier(task))
+            let (id, part) = DownloadPart.parse(key)
+            if let index = records.firstIndex(where: { $0.id == id }), records[index].isActive {
+                records[index].state = .queued
+                records[index].retryAfter = nil
+            }
+            if part == .original, let download = task as? URLSessionDownloadTask {
+                waiting += 1
+                download.cancel { data in
+                    Task { @MainActor in
+                        if let data { try? data.write(to: Self.resumeDataURL(for: key), options: .atomic) }
+                        done()
+                    }
+                }
+            } else {
+                task.cancel()       // a segment or extra file: fetched again in full
+            }
+        }
+        done()
     }
 
     @objc private func appDidBecomeActive() {
         Self.prepareDirectory()
         retryDeferredIndex()
+        inAppBlocked = false
+        // After a relaunch the keep-alive isn't running yet; it can only be requested in the foreground.
+        if let record = records.first(where: { $0.state == .downloading }) ?? records.first(where: { $0.isActive }) {
+            DownloadKeepAlive.begin(title: String(localized: "Downloading"), subtitle: record.name)
+        }
         pump()
     }
 
@@ -622,7 +735,15 @@ final class DownloadManager: NSObject {
         }
         let (id, part) = DownloadPart.parse(key)
         let file = Self.directory.appendingPathComponent(fileName)
-        if let current = liveTasks[key], current !== task { current.cancel() }   // a duplicate attempt lost the race
+        if let task {
+            inAppTasks.remove(ObjectIdentifier(task))
+            abandonedTasks.remove(ObjectIdentifier(task))
+        }
+        if let current = liveTasks[key], current !== task {     // a duplicate attempt lost the race
+            abandonedTasks.insert(ObjectIdentifier(current))
+            inAppTasks.remove(ObjectIdentifier(current))
+            current.cancel()
+        }
         liveTasks[key] = nil
         inflightBytes[key] = nil
         guard let index = records.firstIndex(where: { $0.id == id }), records[index].isActive else {
@@ -727,6 +848,11 @@ final class DownloadManager: NSObject {
         if indexUnavailable {
             // Keep the partial data; after unlock the download is requeued and resumes from it.
             if let resumeData { try? resumeData.write(to: Self.resumeDataURL(for: key), options: .atomic) }
+            return
+        }
+        inAppTasks.remove(ObjectIdentifier(task))
+        if abandonedTasks.remove(ObjectIdentifier(task)) != nil {
+            // Cancelled on purpose (handed over to the background session, or a duplicate).
             return
         }
         let (id, part) = DownloadPart.parse(key)

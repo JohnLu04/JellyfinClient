@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 #if compiler(>=6.2)
 import BackgroundTasks
 #endif
@@ -6,17 +7,34 @@ import BackgroundTasks
 /// Keeps the app running in the background while downloads are queued (iOS 26+), like Streamyfin's
 /// continued-processing keeper.
 ///
-/// The transfer itself never needs this: it runs in the background URLSession either way. What it
-/// adds is that the app isn't suspended between downloads, so the next episode in the queue starts
-/// immediately instead of whenever iOS next wakes the app, and progress keeps updating. iOS shows its
-/// own progress indicator for it while the app is in the background.
+/// A transfer that is already running continues in the background URLSession either way. But iOS
+/// postpones transfers a background session *starts* while the app is in the background, and a
+/// transcode starts one per segment (an original its extra files, a queue its next episode). While
+/// this keeps the app running, those start in the app instead (see `DownloadManager`), so the download
+/// carries on without pauses. iOS shows its own progress indicator for it while the app is in the
+/// background.
 ///
 /// One task covers the whole queue. It can only be submitted while the app is in the foreground, so
 /// it is requested when the user starts a download; afterwards it is just updated and ended once the
 /// queue is empty. Before iOS 26, or if the system declines, everything still works without it.
 @MainActor
 enum DownloadKeepAlive {
+    /// The app is being kept running in the background right now.
+    private(set) static var isRunning = false
+
+    /// Called by the keeper (from its queue) when it starts or ends.
+    nonisolated fileprivate static func setRunning(_ running: Bool) {
+        Task { @MainActor in
+            guard isRunning != running else { return }
+            isRunning = running
+            DownloadManager.shared.keepAliveChanged(running: running)
+        }
+    }
+
     static func begin(title: String, subtitle: String) {
+        #if DEBUG
+        if DebugKeeper.isEnabled { DebugKeeper.begin(); return }
+        #endif
         #if compiler(>=6.2)
         if #available(iOS 26.0, *) { Keeper.shared.ensureRunning(title: title, subtitle: subtitle) }
         #endif
@@ -35,11 +53,50 @@ enum DownloadKeepAlive {
     }
 
     static func end() {
+        #if DEBUG
+        if DebugKeeper.isEnabled { DebugKeeper.end(); return }
+        #endif
         #if compiler(>=6.2)
         if #available(iOS 26.0, *) { Keeper.shared.finish() }
         #endif
     }
 }
+
+#if DEBUG
+/// The simulator has no BGTaskScheduler. With JF_DEBUG_KEEPALIVE=1 this stands in for the keeper: it
+/// "runs" until the app's ordinary background time runs out (about 30 s), then "ends" like iOS would.
+@MainActor
+private enum DebugKeeper {
+    static let isEnabled = ProcessInfo.processInfo.environment["JF_DEBUG_KEEPALIVE"] != nil
+    private static var assertion = UIBackgroundTaskIdentifier.invalid
+    private static var observer: NSObjectProtocol?
+
+    static func begin() {
+        guard observer == nil else { return }
+        DownloadDiagnostics.log("Debug keep-alive running")
+        DownloadKeepAlive.setRunning(true)
+        observer = NotificationCenter.default.addObserver(forName: UIApplication.didEnterBackgroundNotification,
+                                                          object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated {
+                assertion = UIApplication.shared.beginBackgroundTask(withName: "Debug keep-alive") {
+                    DownloadDiagnostics.log("Debug keep-alive ended by iOS")
+                    end()
+                }
+            }
+        }
+    }
+
+    static func end() {
+        if let observer { NotificationCenter.default.removeObserver(observer) }
+        observer = nil
+        DownloadKeepAlive.setRunning(false)
+        // Let the hand-over begin its own background task before this one ends.
+        DispatchQueue.main.async {
+            if assertion != .invalid { UIApplication.shared.endBackgroundTask(assertion); assertion = .invalid }
+        }
+    }
+}
+#endif
 
 #if compiler(>=6.2)
 @available(iOS 26.0, *)
@@ -103,6 +160,7 @@ private final class Keeper: @unchecked Sendable {
             task.progress.completedUnitCount = task.progress.totalUnitCount
             task.setTaskCompleted(success: true)
             self.task = nil
+            DownloadKeepAlive.setRunning(false)
             DownloadDiagnostics.log("Background keep-alive finished (queue empty)")
         }
     }
@@ -124,10 +182,12 @@ private final class Keeper: @unchecked Sendable {
                     DownloadDiagnostics.log("Background keep-alive ended by iOS (downloads continue, just slower in the background)")
                     self.task?.setTaskCompleted(success: false)
                     self.task = nil
+                    DownloadKeepAlive.setRunning(false)
                 }
             }
             self.task = continued
             self.isPending = false
+            DownloadKeepAlive.setRunning(true)
             DownloadDiagnostics.log("Background keep-alive running – the app keeps working in the background")
         }
     }
