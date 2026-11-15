@@ -531,6 +531,16 @@
         }
       }
     },
+    "Clear": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leeren"
+          }
+        }
+      }
+    },
     "Close": {
       "localizations": {
         "de": {
@@ -621,16 +631,6 @@
         }
       }
     },
-    "Connection interrupted – retrying (%lld/%lld)": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Verbindung unterbrochen – neuer Versuch (%1$lld/%2$lld)"
-          }
-        }
-      }
-    },
     "Container": {
       "localizations": {
         "de": {
@@ -647,6 +647,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Fortsetzen"
+          }
+        }
+      }
+    },
+    "Copy": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kopieren"
           }
         }
       }
@@ -931,6 +941,16 @@
         }
       }
     },
+    "Download Log": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download-Protokoll"
+          }
+        }
+      }
+    },
     "Download Queued": {
       "localizations": {
         "de": {
@@ -957,6 +977,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Alle %1$lld Folgen von %2$@ herunterladen?"
+          }
+        }
+      }
+    },
+    "Download events and errors appear here.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hier erscheinen Download-Ereignisse und Fehler."
           }
         }
       }
@@ -1187,16 +1217,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Findet Titel in deinen Bibliotheken. Verbinde Seerr in den Einstellungen, um auch Titel zu finden, die du noch nicht hast."
-          }
-        }
-      }
-    },
-    "Finished – saved when you unlock your iPhone": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Fertig – wird beim Entsperren des iPhones gespeichert"
           }
         }
       }
@@ -1547,6 +1567,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Keine Downloads"
+          }
+        }
+      }
+    },
+    "No Entries": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Einträge"
           }
         }
       }
@@ -2177,6 +2207,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Erneut versuchen"
+          }
+        }
+      }
+    },
+    "Retrying (%lld/%lld): %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neuer Versuch (%1$lld/%2$lld): %3$@"
           }
         }
       }

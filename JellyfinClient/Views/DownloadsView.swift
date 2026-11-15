@@ -3,6 +3,7 @@ import SwiftUI
 struct DownloadsView: View {
     @Environment(DownloadManager.self) private var downloads
     @Environment(\.dismiss) private var dismiss
+    @State private var showLog = false
 
     var body: some View {
         NavigationStack {
@@ -46,7 +47,11 @@ struct DownloadsView: View {
             .navigationTitle("Downloads")
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Download Log", systemImage: "doc.text.magnifyingglass") { showLog = true }
+                }
             }
+            .sheet(isPresented: $showLog) { DownloadLogView() }
         }
     }
 }

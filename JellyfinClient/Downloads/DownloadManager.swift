@@ -75,8 +75,6 @@ final class DownloadManager: NSObject {
     @ObservationIgnored private var indexUnavailable = false
     /// Transfers finished while the index was unreadable; filed once it can be read.
     @ObservationIgnored private var pendingCompletions: [(id: String, fileName: String, size: Int64)] = []
-    /// Finished files that couldn't be moved into the locked download folder yet.
-    @ObservationIgnored private var parkedFiles: [String: (url: URL, fileName: String, size: Int64)] = [:]
     @ObservationIgnored private var eventsDelivered = false
     @ObservationIgnored private var speedSamples: [String: (time: Date, bytes: Int64)] = [:]
     @ObservationIgnored private var attemptStartBytes: [String: Int64] = [:]
@@ -127,36 +125,16 @@ final class DownloadManager: NSObject {
     }
 
     /// Sideloading tools often sign with the provisioning profile's default data protection
-    /// ("complete"), which locks the app's files whenever the iPhone is locked, so a download that
-    /// finishes with the screen off couldn't be moved into place. The download folder and its files
-    /// use "until first unlock" instead (iOS' normal default), so they stay writable while locked.
-    /// Changing the class of existing files only works while unlocked, so this runs again on unlock.
-    ///
-    /// The same goes for the folder the system's download service writes the transfer into while it
-    /// runs (`Library/Caches/com.apple.nsurlsessiond/Downloads/<bundle id>`): under "complete" it
-    /// can't create the file while the iPhone is locked ("The file can't be created").
+    /// ("complete"), which locks the app's files whenever the iPhone is locked. The download folder
+    /// and its files use "until first unlock" instead (iOS' normal default), so finished downloads and
+    /// the index can be written while locked. Existing files can only be changed while unlocked.
     nonisolated private static func prepareDirectory() {
         let fileManager = FileManager.default
         let protection: [FileAttributeKey: Any] = [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
-        let library = fileManager.urls(for: .libraryDirectory, in: .userDomainMask)[0]
-        let caches = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let serviceRoot = caches.appendingPathComponent("com.apple.nsurlsessiond", isDirectory: true)
-        let serviceDownloads = serviceRoot.appendingPathComponent("Downloads", isDirectory: true)
-        let serviceApp = serviceDownloads.appendingPathComponent(Bundle.main.bundleIdentifier ?? "JellyfinClient", isDirectory: true)
-
-        for folder in [directory, serviceApp] {
-            try? fileManager.createDirectory(at: folder, withIntermediateDirectories: true, attributes: protection)
-        }
-        // New files take the class of their folder, so the folders matter most.
-        for folder in [library, caches, documents, fileManager.temporaryDirectory, serviceRoot, serviceDownloads, serviceApp, directory] {
-            try? fileManager.setAttributes(protection, ofItemAtPath: folder.path)
-        }
-        // Existing files: the finished downloads and index, and transfers in progress.
-        for folder in [directory, serviceApp] {
-            for name in (try? fileManager.contentsOfDirectory(atPath: folder.path)) ?? [] {
-                try? fileManager.setAttributes(protection, ofItemAtPath: folder.appendingPathComponent(name).path)
-            }
+        try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true, attributes: protection)
+        try? fileManager.setAttributes(protection, ofItemAtPath: directory.path)
+        for name in (try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? [] {
+            try? fileManager.setAttributes(protection, ofItemAtPath: directory.appendingPathComponent(name).path)
         }
     }
 
@@ -286,6 +264,7 @@ final class DownloadManager: NSObject {
             task = session.downloadTask(withResumeData: resumeData)
             try? FileManager.default.removeItem(at: Self.resumeDataURL(for: id))
             downloadLog.notice("Resuming \(id, privacy: .public)")
+            DownloadDiagnostics.log("\(id): resuming from \(record.bytesWritten) bytes")
         } else {
             // The token comes from the Keychain (readable after first unlock), so this also works when
             // the app was relaunched in the background with the screen locked.
@@ -303,6 +282,7 @@ final class DownloadManager: NSObject {
             records[index].bytesWritten = 0
             records[index].progress = 0
             downloadLog.notice("Starting \(id, privacy: .public)")
+            DownloadDiagnostics.log("\(id): starting \(record.mbit.map { "transcoded \($0) Mbit/s" } ?? "original") download")
         }
 
         task.taskDescription = id
@@ -326,52 +306,12 @@ final class DownloadManager: NSObject {
     @objc private func appDidBecomeActive() {
         Self.prepareDirectory()
         retryDeferredIndex()
-        fileParkedDownloads()
         pump()
     }
 
     @objc private func protectedDataAvailable() {
         Self.prepareDirectory()
         retryDeferredIndex()
-        fileParkedDownloads()
-    }
-
-    /// A transfer finished, but the download folder was locked; the file waits next to the system's
-    /// temporary copy until the iPhone is unlocked.
-    private func parked(id: String, task: URLSessionDownloadTask, url: URL, fileName: String, size: Int64) {
-        parkedFiles[id] = (url, fileName, size)
-        if !indexUnavailable, let index = records.firstIndex(where: { $0.id == id }) {
-            records[index].errorMessage = String(localized: "Finished – saved when you unlock your iPhone")
-            records[index].progress = 1
-        }
-        if UIApplication.shared.isProtectedDataAvailable { fileParkedDownloads() }
-    }
-
-    private func fileParkedDownloads() {
-        guard !indexUnavailable, !parkedFiles.isEmpty else { return }
-        for (id, file) in parkedFiles {
-            let destination = Self.directory.appendingPathComponent(file.fileName)
-            do {
-                try? FileManager.default.removeItem(at: destination)
-                try FileManager.default.moveItem(at: file.url, to: destination)
-                try? FileManager.default.setAttributes(
-                    [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: destination.path)
-                parkedFiles[id] = nil
-                finished(id: id, task: liveTasks[id], fileName: file.fileName, size: file.size)
-            } catch {
-                downloadLog.error("Still can't file \(id, privacy: .public): \(error.localizedDescription, privacy: .public)")
-                // Unlocked and still failing: a real error, not data protection.
-                if UIApplication.shared.isProtectedDataAvailable {
-                    parkedFiles[id] = nil
-                    try? FileManager.default.removeItem(at: file.url)
-                    liveTasks[id] = nil
-                    if let index = records.firstIndex(where: { $0.id == id }) {
-                        fail(at: index, message: error.localizedDescription)
-                    }
-                    pump()
-                }
-            }
-        }
     }
 
     /// The iPhone was unlocked: read the index now, file what finished meanwhile and reconnect.
@@ -441,6 +381,7 @@ final class DownloadManager: NSObject {
         records[index].retryAfter = nil
         saveIndex()
         downloadLog.notice("Finished \(id, privacy: .public)")
+        DownloadDiagnostics.log("\(id): completed")
         DownloadNotifications.post(title: String(localized: "Download Complete"), body: records[index].name, id: id)
         pump()
     }
@@ -462,8 +403,11 @@ final class DownloadManager: NSObject {
             pump()
             return
         }
-        // Keep what was transferred so the next attempt continues from there.
-        if let resumeData = error?.userInfo[NSURLSessionDownloadTaskResumeData] as? Data {
+        // Keep what was transferred so the next attempt continues from there; but if storing the file
+        // was the problem, start the next attempt clean.
+        if let error, Self.isStorageError(error) {
+            try? FileManager.default.removeItem(at: Self.resumeDataURL(for: id))
+        } else if let resumeData = error?.userInfo[NSURLSessionDownloadTaskResumeData] as? Data {
             try? resumeData.write(to: Self.resumeDataURL(for: id), options: .atomic)
         }
 
@@ -493,7 +437,8 @@ final class DownloadManager: NSObject {
                 records[index].retryCount = attempt
                 records[index].state = .queued
                 records[index].retryAfter = delay > 0 ? .now.addingTimeInterval(delay) : nil
-                records[index].errorMessage = String(localized: "Connection interrupted – retrying (\(attempt)/\(Self.maxRetries))")
+                let reason = httpStatus.map(Self.message(forStatus:)) ?? error?.localizedDescription ?? ""
+                records[index].errorMessage = String(localized: "Retrying (\(attempt)/\(Self.maxRetries)): \(reason)")
                 downloadLog.notice("Retrying \(id, privacy: .public) in \(delay) s (attempt \(attempt))")
                 saveIndex()
             }
@@ -509,6 +454,7 @@ final class DownloadManager: NSObject {
         try? FileManager.default.removeItem(at: Self.resumeDataURL(for: id))
         saveIndex()
         downloadLog.error("Failed \(id, privacy: .public): \(message, privacy: .public)")
+        DownloadDiagnostics.log("\(id): failed – \(message)")
         DownloadNotifications.post(title: String(localized: "Download Failed"),
                                    body: "\(records[index].name) – \(message)", id: id)
     }
@@ -636,26 +582,13 @@ extension DownloadManager: URLSessionDownloadDelegate {
             return
         }
 
-        // The file at `location` is deleted when this method returns, so move it synchronously.
+        // The file at `location` is deleted when this method returns, so store it synchronously.
         let suggestedExt = (response?.suggestedFilename as NSString?)?.pathExtension ?? ""
         let fileName = "\(id).\(suggestedExt.isEmpty ? "mp4" : suggestedExt.lowercased())"
         let destination = Self.directory.appendingPathComponent(fileName)
+        DownloadDiagnostics.log("\(id): transfer finished (HTTP \(status)), storing from \(location.path)")
         do {
-            Self.prepareDirectory()
-            try? FileManager.default.removeItem(at: destination)
-            do {
-                try FileManager.default.moveItem(at: location, to: destination)
-            } catch {
-                // Folder still locked (old protection class, device locked): park the file in the
-                // download service's own temp area, which is writable now, and file it on unlock.
-                let parked = location.deletingLastPathComponent().appendingPathComponent("parked-\(fileName)")
-                try? FileManager.default.removeItem(at: parked)
-                try FileManager.default.moveItem(at: location, to: parked)
-                let size = (try? parked.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
-                downloadLog.notice("Parked \(id, privacy: .public) until the iPhone is unlocked")
-                Task { @MainActor in self.parked(id: id, task: downloadTask, url: parked, fileName: fileName, size: size) }
-                return
-            }
+            try Self.store(location, at: destination, id: id)
             try? FileManager.default.setAttributes(
                 [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: destination.path)
             var values = URLResourceValues()
@@ -663,11 +596,65 @@ extension DownloadManager: URLSessionDownloadDelegate {
             var url = destination
             try? url.setResourceValues(values)
             let size = (try? destination.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
+            DownloadDiagnostics.log("\(id): stored \(size) bytes")
             Task { @MainActor in self.finished(id: id, task: downloadTask, fileName: fileName, size: size) }
         } catch {
             let nsError = error as NSError
+            DownloadDiagnostics.log("\(id): couldn't store the file – \(DownloadDiagnostics.describe(nsError))")
             Task { @MainActor in self.ended(id: id, task: downloadTask, error: nsError, httpStatus: nil) }
         }
+    }
+
+    /// Moves the finished file into the download folder. Some sideloaded installs only get read access
+    /// to the file iOS hands over, so moving fails ("no permission"); then it is copied, and as a last
+    /// resort read and written in chunks.
+    nonisolated private static func store(_ location: URL, at destination: URL, id: String) throws {
+        let fileManager = FileManager.default
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? fileManager.removeItem(at: destination)
+        let moveError: NSError
+        #if DEBUG
+        // Debug builds only: JF_DEBUG_FAIL_STORE=move (or =copy) simulates installs where the file iOS
+        // hands over can't be moved (or copied), to exercise the fallbacks.
+        let simulatedFailure = ProcessInfo.processInfo.environment["JF_DEBUG_FAIL_STORE"] ?? ""
+        let noPermission = NSError(domain: NSCocoaErrorDomain, code: NSFileWriteNoPermissionError)
+        #else
+        let simulatedFailure = ""
+        let noPermission = NSError(domain: NSCocoaErrorDomain, code: NSFileWriteNoPermissionError)
+        #endif
+        do {
+            if !simulatedFailure.isEmpty { throw noPermission }
+            try fileManager.moveItem(at: location, to: destination)
+            return
+        } catch {
+            moveError = error as NSError
+            DownloadDiagnostics.log("\(id): move failed – \(DownloadDiagnostics.describe(moveError)); copying instead")
+        }
+        do {
+            try? fileManager.removeItem(at: destination)
+            if simulatedFailure == "copy" { throw noPermission }
+            try fileManager.copyItem(at: location, to: destination)
+            try? fileManager.removeItem(at: location)
+            return
+        } catch {
+            DownloadDiagnostics.log("\(id): copy failed – \(DownloadDiagnostics.describe(error as NSError)); streaming instead")
+        }
+        try? fileManager.removeItem(at: destination)
+        let input = try FileHandle(forReadingFrom: location)
+        defer { try? input.close() }
+        guard fileManager.createFile(atPath: destination.path, contents: nil) else { throw moveError }
+        let output = try FileHandle(forWritingTo: destination)
+        defer { try? output.close() }
+        do {
+            while let chunk = try input.read(upToCount: 8 << 20), !chunk.isEmpty {
+                try output.write(contentsOf: chunk)
+            }
+            try output.synchronize()
+        } catch {
+            try? fileManager.removeItem(at: destination)
+            throw error
+        }
+        try? fileManager.removeItem(at: location)
     }
 
     nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
@@ -675,6 +662,7 @@ extension DownloadManager: URLSessionDownloadDelegate {
         guard let error, let id = task.taskDescription else { return }
         let nsError = error as NSError
         downloadLog.notice("Task for \(id, privacy: .public) ended: \(nsError.domain, privacy: .public) \(nsError.code)")
+        DownloadDiagnostics.log("\(id): transfer ended – \(DownloadDiagnostics.describe(nsError))")
         Task { @MainActor in self.ended(id: id, task: task, error: nsError, httpStatus: nil) }
     }
 
