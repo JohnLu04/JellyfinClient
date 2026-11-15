@@ -131,13 +131,32 @@ final class DownloadManager: NSObject {
     /// finishes with the screen off couldn't be moved into place. The download folder and its files
     /// use "until first unlock" instead (iOS' normal default), so they stay writable while locked.
     /// Changing the class of existing files only works while unlocked, so this runs again on unlock.
+    ///
+    /// The same goes for the folder the system's download service writes the transfer into while it
+    /// runs (`Library/Caches/com.apple.nsurlsessiond/Downloads/<bundle id>`): under "complete" it
+    /// can't create the file while the iPhone is locked ("The file can't be created").
     nonisolated private static func prepareDirectory() {
         let fileManager = FileManager.default
         let protection: [FileAttributeKey: Any] = [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication]
-        try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true, attributes: protection)
-        try? fileManager.setAttributes(protection, ofItemAtPath: directory.path)
-        for name in (try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? [] {
-            try? fileManager.setAttributes(protection, ofItemAtPath: directory.appendingPathComponent(name).path)
+        let library = fileManager.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+        let caches = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let serviceRoot = caches.appendingPathComponent("com.apple.nsurlsessiond", isDirectory: true)
+        let serviceDownloads = serviceRoot.appendingPathComponent("Downloads", isDirectory: true)
+        let serviceApp = serviceDownloads.appendingPathComponent(Bundle.main.bundleIdentifier ?? "JellyfinClient", isDirectory: true)
+
+        for folder in [directory, serviceApp] {
+            try? fileManager.createDirectory(at: folder, withIntermediateDirectories: true, attributes: protection)
+        }
+        // New files take the class of their folder, so the folders matter most.
+        for folder in [library, caches, documents, fileManager.temporaryDirectory, serviceRoot, serviceDownloads, serviceApp, directory] {
+            try? fileManager.setAttributes(protection, ofItemAtPath: folder.path)
+        }
+        // Existing files: the finished downloads and index, and transfers in progress.
+        for folder in [directory, serviceApp] {
+            for name in (try? fileManager.contentsOfDirectory(atPath: folder.path)) ?? [] {
+                try? fileManager.setAttributes(protection, ofItemAtPath: folder.appendingPathComponent(name).path)
+            }
         }
     }
 
@@ -448,9 +467,18 @@ final class DownloadManager: NSObject {
             try? resumeData.write(to: Self.resumeDataURL(for: id), options: .atomic)
         }
 
-        if let httpStatus, !Self.isRetryable(status: httpStatus) {
+        if let error, Self.isStorageError(error), !UIApplication.shared.isProtectedDataAvailable {
+            // The iPhone is locked and its storage isn't writable for this download right now. Not a
+            // real failure: try again in a minute (inside the download service, so this also happens
+            // while the app is suspended) without using up the retry budget.
+            records[index].state = .queued
+            records[index].retryAfter = .now.addingTimeInterval(60)
+            records[index].errorMessage = String(localized: "iPhone locked – trying again shortly")
+            downloadLog.notice("Storage locked for \(id, privacy: .public); retrying in 60 s")
+            saveIndex()
+        } else if let httpStatus, !Self.isRetryable(status: httpStatus) {
             fail(at: index, message: Self.message(forStatus: httpStatus))
-        } else if let error, !Self.isRetryable(error) {
+        } else if let error, !Self.isRetryable(error), !Self.isStorageError(error) {
             fail(at: index, message: error.localizedDescription)
         } else {
             let attempt = (records[index].retryCount ?? 0) + 1
@@ -506,6 +534,19 @@ final class DownloadManager: NSObject {
     }
 
     // MARK: - Errors
+
+    /// Errors writing the file on the iPhone (often data protection while locked), as opposed to the
+    /// server or the network. Retried, since they are usually gone once the iPhone is unlocked.
+    private static func isStorageError(_ error: NSError) -> Bool {
+        if error.domain == NSCocoaErrorDomain {
+            return [NSFileWriteNoPermissionError, NSFileReadNoPermissionError, NSFileWriteUnknownError,
+                    NSFileReadUnknownError, NSFileNoSuchFileError, NSFileReadNoSuchFileError].contains(error.code)
+        }
+        guard error.domain == NSURLErrorDomain else { return false }
+        return [NSURLErrorCannotCreateFile, NSURLErrorCannotOpenFile, NSURLErrorCannotWriteToFile,
+                NSURLErrorCannotMoveFile, NSURLErrorCannotCloseFile, NSURLErrorCannotRemoveFile,
+                NSURLErrorNoPermissionsToReadFile].contains(error.code)
+    }
 
     private static func isRetryable(status: Int) -> Bool {
         status == 408 || status == 429 || status >= 500

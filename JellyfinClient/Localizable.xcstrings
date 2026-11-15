@@ -3001,6 +3001,16 @@
         }
       }
     },
+    "iPhone locked – trying again shortly": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iPhone gesperrt – neuer Versuch gleich"
+          }
+        }
+      }
+    },
     "media.movie": {
       "localizations": {
         "de": {
