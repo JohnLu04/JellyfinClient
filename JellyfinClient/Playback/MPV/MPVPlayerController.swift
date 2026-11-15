@@ -65,9 +65,15 @@ final class MPVPlayerController: PlaybackEngine {
     @ObservationIgnored private let startSeconds: Double
     @ObservationIgnored private var addedSubtitles: [Int: Int] = [:]   // Jellyfin index → mpv track id
     @ObservationIgnored private var didStart = false
+    @ObservationIgnored private let offlineTracks: [PlaybackCoordinator.OfflineTrack]
+    @ObservationIgnored private let embeddedAudioTitle: String?
+    @ObservationIgnored private var didAddOfflineTracks = false
     @ObservationIgnored private var lifecycleObservers: [NSObjectProtocol] = []
 
-    init(title: String, url: URL, startSeconds: Double, session: PlaybackSession?) {
+    init(title: String, url: URL, startSeconds: Double, session: PlaybackSession?,
+         offlineTracks: [PlaybackCoordinator.OfflineTrack] = [], embeddedAudioTitle: String? = nil) {
+        self.offlineTracks = offlineTracks
+        self.embeddedAudioTitle = embeddedAudioTitle
         self.title = title
         self.url = url
         self.startSeconds = startSeconds
@@ -206,6 +212,7 @@ final class MPVPlayerController: PlaybackEngine {
             }
         case .fileLoaded:
             isSwitching = false
+            addOfflineTracksIfNeeded()
             applySelection()
             if !didStart {
                 didStart = true
@@ -296,10 +303,29 @@ final class MPVPlayerController: PlaybackEngine {
         return ordinal < ids.count ? ids[ordinal] : nil
     }
 
+    /// Downloads: extra audio tracks and subtitle files sit next to the video; mpv adds them as tracks
+    /// without switching to them.
+    private func addOfflineTracksIfNeeded() {
+        guard session == nil, !didAddOfflineTracks, let core else { return }
+        didAddOfflineTracks = true
+        for track in offlineTracks {
+            let command = track.kind == .audio ? "audio-add" : "sub-add"
+            core.command([command, track.url.path, "auto", track.title, track.language ?? "und"])
+        }
+        if !offlineTracks.isEmpty { debugLog("added \(offlineTracks.count) offline track(s)") }
+    }
+
     private func refreshLocalTracks() {
         guard session == nil, let core else { return }
         let tracks = core.tracks()
-        audioOptions = tracks.filter { $0.type == "audio" }.map { TrackOption(id: $0.id, label: $0.label) }
+        let embeddedAudio = tracks.filter { $0.type == "audio" && !$0.isExternal }
+        audioOptions = tracks.filter { $0.type == "audio" }.map { track in
+            // A transcoded download's own track has no name in the file; use the one from the server.
+            if let embeddedAudioTitle, embeddedAudio.count == 1, track.id == embeddedAudio[0].id {
+                return TrackOption(id: track.id, label: embeddedAudioTitle)
+            }
+            return TrackOption(id: track.id, label: track.label)
+        }
         subtitleOptions = tracks.filter { $0.type == "sub" }.map { TrackOption(id: $0.id, label: $0.label) }
         selectedAudio = tracks.first { $0.type == "audio" && $0.isSelected }?.id
         selectedSubtitle = tracks.first { $0.type == "sub" && $0.isSelected }?.id

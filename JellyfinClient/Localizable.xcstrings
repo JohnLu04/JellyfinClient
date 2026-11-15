@@ -141,6 +141,16 @@
         }
       }
     },
+    "%lld subtitles": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Untertitel"
+          }
+        }
+      }
+    },
     "%lld waiting for approval": {
       "localizations": {
         "de": {
@@ -157,6 +167,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%1$lld. %2$@"
+          }
+        }
+      }
+    },
+    "+%lld audio tracks": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "+%lld Tonspuren"
           }
         }
       }
@@ -247,6 +267,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Alle"
+          }
+        }
+      }
+    },
+    "All Audio Tracks (%lld)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle Tonspuren (%lld)"
           }
         }
       }
@@ -357,6 +387,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ton & Untertitel"
+          }
+        }
+      }
+    },
+    "Audio tracks & subtitles · %lld of %lld": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tonspuren & Untertitel · %1$lld von %2$lld"
           }
         }
       }
@@ -1151,6 +1191,26 @@
         }
       }
     },
+    "External Subtitles (%lld)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Externe Untertitel (%lld)"
+          }
+        }
+      }
+    },
+    "Extra audio tracks and subtitle files play in mpv; the Apple player only plays the video file's own track.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zusätzliche Tonspuren und Untertitel-Dateien gibt es im mpv-Player; der Apple-Player spielt nur die Tonspur der Videodatei."
+          }
+        }
+      }
+    },
     "Failed": {
       "localizations": {
         "de": {
@@ -1357,6 +1417,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Wie viel vom Video im Voraus geladen wird, bis zu 10 Minuten. Mehr Puffer überbrückt längere Netzaussetzer, braucht aber mehr Speicher und Daten; mit mpv ist der Puffer auf diesem iPhone auf %lld MB begrenzt. Gilt ab dem nächsten gestarteten Video."
+          }
+        }
+      }
+    },
+    "Image subtitles (PGS, VobSub) can't be saved separately – download the original to keep them.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bild-Untertitel (PGS, VobSub) lassen sich nicht einzeln speichern – lade dafür das Original herunter."
           }
         }
       }
@@ -2651,6 +2721,16 @@
         }
       }
     },
+    "Subtitles (%lld)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Untertitel (%lld)"
+          }
+        }
+      }
+    },
     "Subtitles available": {
       "localizations": {
         "de": {
@@ -2711,6 +2791,26 @@
         }
       }
     },
+    "The original file contains all of its embedded audio tracks and subtitles.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Originaldatei enthält alle eingebetteten Tonspuren und Untertitel."
+          }
+        }
+      }
+    },
+    "The other audio tracks are loaded as extra files afterwards; the server converts each of them once, which takes extra time.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die übrigen Tonspuren werden danach als eigene Dateien geladen; der Server wandelt jede davon einmal um, das dauert zusätzlich."
+          }
+        }
+      }
+    },
     "The server converts the video to H.264/AAC (MP4) at the chosen bitrate. Requires the transcoding permission. The download takes about as long as the server needs to transcode.": {
       "localizations": {
         "de": {
@@ -2737,6 +2837,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Das Streaming-Limit des Servers ist erreicht."
+          }
+        }
+      }
+    },
+    "The video file carries one audio track (%@).": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Videodatei enthält eine Tonspur (%@)."
           }
         }
       }

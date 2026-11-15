@@ -47,6 +47,8 @@ enum SettingsKeys {
     static let autoplayTrailers = "settings.autoplayTrailers"
     static let bufferSeconds = "settings.bufferSeconds"
     static let downloadEngine = "settings.downloadEngine"   // DownloadEngineSetting raw value
+    static let downloadAllAudio = "settings.downloadAllAudio"
+    static let downloadSubtitles = "settings.downloadSubtitles"
     static let systemDownloadsBroken = "downloads.systemEngineBroken"
 }
 

@@ -37,9 +37,19 @@ final class PlaybackCoordinator {
                        selection: .defaults(for: item.primaryMediaSource))
     }
 
-    func playLocal(fileURL: URL, title: String) {
+    /// Extra audio tracks and subtitle files of a download, added to mpv as selectable tracks.
+    struct OfflineTrack {
+        enum Kind { case audio, subtitle }
+        let kind: Kind
+        let url: URL
+        let title: String
+        let language: String?
+    }
+
+    func playLocal(fileURL: URL, title: String, tracks: [OfflineTrack] = [], embeddedAudioTitle: String? = nil) {
         stop()
-        present(player: PlayerKind.current, url: fileURL, title: title, startSeconds: 0, session: nil)
+        present(player: PlayerKind.current, url: fileURL, title: title, startSeconds: 0, session: nil,
+                offlineTracks: tracks, embeddedAudioTitle: embeddedAudioTitle)
     }
 
     /// Asks the server for a new stream with other tracks (used by mpv when a switch needs a new transcode).
@@ -84,7 +94,8 @@ final class PlaybackCoordinator {
 
     // MARK: - Presentation
 
-    private func present(player: PlayerKind, url: URL, title: String, startSeconds: Double, session: PlaybackSession?) {
+    private func present(player: PlayerKind, url: URL, title: String, startSeconds: Double, session: PlaybackSession?,
+                         offlineTracks: [OfflineTrack] = [], embeddedAudioTitle: String? = nil) {
         NotificationCenter.default.post(name: .playbackWillStart, object: nil)
         let controller: UIViewController
         switch player {
@@ -97,7 +108,8 @@ final class PlaybackCoordinator {
             controller = native.makeViewController()
 
         case .mpv:
-            let mpv = MPVPlayerController(title: title, url: url, startSeconds: startSeconds, session: session)
+            let mpv = MPVPlayerController(title: title, url: url, startSeconds: startSeconds, session: session,
+                                          offlineTracks: offlineTracks, embeddedAudioTitle: embeddedAudioTitle)
             mpv.onReady = { [weak self] in self?.engineDidStart() }
             mpv.onStateChange = { [weak self] in self?.report(.progress) }
             mpv.onFinished = { [weak self] in self?.stop() }

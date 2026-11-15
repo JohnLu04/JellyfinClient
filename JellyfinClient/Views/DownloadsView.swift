@@ -12,9 +12,7 @@ struct DownloadsView: View {
                     Button {
                         switch record.state {
                         case .completed:
-                            if let url = downloads.fileURL(for: record) {
-                                PlaybackCoordinator.shared.playLocal(fileURL: url, title: record.name)
-                            }
+                            downloads.play(record)
                         case .failed:
                             downloads.retry(id: record.id)
                         case .queued, .downloading:
@@ -78,11 +76,16 @@ struct DownloadRow: View {
                         .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 case .downloading:
                     ProgressView(value: record.progress)
-                    Text(record.errorMessage ?? progressText)
+                    Text(record.errorMessage ?? record.extrasProgress.map {
+                        String(localized: "Audio tracks & subtitles · \($0.done + 1) of \($0.total)")
+                    } ?? progressText)
                         .font(.caption).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
                 case .completed:
                     Text("\(record.qualityLabel) · \(ByteCountFormatter.string(fromByteCount: record.bytesWritten, countStyle: .file))")
                         .font(.caption).foregroundStyle(.secondary)
+                    if let extras = extrasSummary {
+                        Text(extras).font(.caption2).foregroundStyle(.secondary)
+                    }
                 case .failed:
                     Text(record.errorMessage ?? String(localized: "Failed"))
                         .font(.caption).foregroundStyle(.red).lineLimit(2)
@@ -92,6 +95,17 @@ struct DownloadRow: View {
             DownloadStateIcon(record: record).font(.title3)
         }
         .contentShape(Rectangle())
+    }
+
+    /// "+2 audio tracks · 3 subtitles"
+    private var extrasSummary: String? {
+        let done = record.finishedExtras
+        let audio = done.filter { $0.kind == .audio }.count
+        let subs = done.filter { $0.kind == .subtitle }.count
+        var parts: [String] = []
+        if audio > 0 { parts.append(String(localized: "+\(audio) audio tracks")) }
+        if subs > 0 { parts.append(String(localized: "\(subs) subtitles")) }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     /// "4 Mbit/s · 1.2 GB of 2.3 GB · 8.4 MB/s"

@@ -12,6 +12,20 @@ struct DownloadOptionsSheet: View {
     private enum Mode: Hashable { case original, transcoded }
     @State private var mode: Mode
     @State private var mbit: Double
+    @AppStorage(SettingsKeys.downloadAllAudio) private var allAudio = true
+    @AppStorage(SettingsKeys.downloadSubtitles) private var subtitles = true
+
+    private var source: MediaSourceInfo? { item.primaryMediaSource }
+    private var mainAudio: MediaStream? {
+        let index = TrackSelection.defaults(for: source).audioIndex
+        return source?.audioStreams.first { $0.index == index }
+    }
+    private var extraAudioCount: Int { max(0, (source?.audioStreams.count ?? 0) - 1) }
+    /// Subtitles loaded as files: all text ones when transcoding, only external ones for originals.
+    private var subtitleFileCount: Int {
+        (source?.subtitleStreams ?? []).filter { $0.isTextSubtitle && (mode == .transcoded || $0.isExternal == true) }.count
+    }
+    private var imageSubtitleCount: Int { (source?.subtitleStreams ?? []).filter { !$0.isTextSubtitle }.count }
 
     init(item: BaseItem) {
         self.item = item
@@ -20,6 +34,51 @@ struct DownloadOptionsSheet: View {
         // mpv plays any container offline, so the original file is the better default there.
         let originalPlays = PlayerKind.current == .mpv || Self.isNativeContainer(item)
         _mode = State(initialValue: originalPlays ? .original : .transcoded)
+    }
+
+    @ViewBuilder
+    private var tracksSection: some View {
+        let audioCount = source?.audioStreams.count ?? 0
+        if audioCount > 1 || subtitleFileCount > 0 || imageSubtitleCount > 0 {
+            Section {
+                if mode == .transcoded, extraAudioCount > 0 {
+                    Toggle(isOn: $allAudio) {
+                        Text("All Audio Tracks (\(audioCount))")
+                    }
+                }
+                if subtitleFileCount > 0 {
+                    Toggle(isOn: $subtitles) {
+                        Text(mode == .original ? "External Subtitles (\(subtitleFileCount))" : "Subtitles (\(subtitleFileCount))")
+                    }
+                }
+            } header: {
+                Text("Audio & Subtitles")
+            } footer: {
+                Text(tracksFooter)
+            }
+        }
+    }
+
+    private var tracksFooter: String {
+        var lines: [String] = []
+        switch mode {
+        case .original:
+            lines.append(String(localized: "The original file contains all of its embedded audio tracks and subtitles."))
+        case .transcoded:
+            if let mainAudio {
+                lines.append(String(localized: "The video file carries one audio track (\(mainAudio.label))."))
+            }
+            if extraAudioCount > 0, allAudio {
+                lines.append(String(localized: "The other audio tracks are loaded as extra files afterwards; the server converts each of them once, which takes extra time."))
+            }
+            if imageSubtitleCount > 0 {
+                lines.append(String(localized: "Image subtitles (PGS, VobSub) can't be saved separately – download the original to keep them."))
+            }
+        }
+        if PlayerKind.current == .native, mode == .transcoded || subtitleFileCount > 0 {
+            lines.append(String(localized: "Extra audio tracks and subtitle files play in mpv; the Apple player only plays the video file's own track."))
+        }
+        return lines.joined(separator: " ")
     }
 
     private static func isNativeContainer(_ item: BaseItem) -> Bool {
@@ -51,6 +110,8 @@ struct DownloadOptionsSheet: View {
                     }
                 }
 
+                tracksSection
+
                 Section {
                     if let size = estimatedSize {
                         LabeledContent(mode == .original ? "File size" : "Estimated size",
@@ -74,7 +135,8 @@ struct DownloadOptionsSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Download") {
                         guard let api = app.api else { return }
-                        downloads.start(item: item, api: api, mbit: mode == .transcoded ? mbit : nil)
+                        downloads.start(item: item, api: api, mbit: mode == .transcoded ? mbit : nil,
+                                        tracks: DownloadTrackOptions(allAudioTracks: allAudio, subtitles: subtitles))
                         dismiss()
                     }
                     .bold()

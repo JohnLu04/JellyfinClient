@@ -27,6 +27,8 @@ struct MPVTrack {
     let isSelected: Bool
 
     var label: String {
+        // Added files (downloads) carry the server's full name already.
+        if isExternal, let title, !title.isEmpty { return title }
         let parts = [title, language?.uppercased(), codec?.uppercased()].compactMap { $0 }.filter { !$0.isEmpty }
         return parts.isEmpty ? String(localized: "Track \(id)") : parts.joined(separator: " · ")
     }

@@ -181,9 +181,7 @@ struct MediaDetailView: View {
             Button {
                 switch record?.state {
                 case .completed?:
-                    if let record, let url = downloads.fileURL(for: record) {
-                        PlaybackCoordinator.shared.playLocal(fileURL: url, title: target.name ?? record.name)
-                    }
+                    if let record { downloads.play(record, title: target.name) }
                 case .downloading?, .queued?:
                     break
                 case .failed?:
@@ -474,8 +472,8 @@ struct MediaDetailView: View {
 
     private func episodeDownloadTapped(_ episode: BaseItem) {
         let record = downloads.record(for: episode.id)
-        if record?.state == .completed, let record, let url = downloads.fileURL(for: record) {
-            PlaybackCoordinator.shared.playLocal(fileURL: url, title: episode.name ?? record.name)
+        if record?.state == .completed, let record {
+            downloads.play(record, title: episode.name)
         } else if record?.state == .failed {
             downloads.retry(id: episode.id)
         } else if record == nil {

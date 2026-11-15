@@ -21,6 +21,38 @@ enum DownloadEngineSetting: String, CaseIterable, Identifiable {
     }
 }
 
+/// An extra file of a download: another audio track or a subtitle, loaded after the video.
+struct DownloadExtra: Codable, Equatable {
+    enum Kind: String, Codable { case audio, subtitle }
+    var kind: Kind
+    var streamIndex: Int        // Jellyfin stream index
+    var title: String
+    var language: String?
+    var codec: String?
+    var isForced: Bool?
+    var isDefault: Bool?
+    var fileName: String?       // set once downloaded
+    var skipped: Bool?          // the server couldn't deliver it; the download completes without it
+
+    var isPending: Bool { fileName == nil && skipped != true }
+}
+
+/// What goes into an offline copy besides the video (Download sheet).
+struct DownloadTrackOptions {
+    /// Transcoded downloads: all other audio tracks as extra files (the video file carries one).
+    var allAudioTracks = true
+    /// Text subtitles as separate files (originals: only external ones; embedded ones are in the file).
+    var subtitles = true
+
+    /// The last choice from the Download sheet (also used for season downloads).
+    static var stored: DownloadTrackOptions {
+        let defaults = UserDefaults.standard
+        return DownloadTrackOptions(
+            allAudioTracks: defaults.object(forKey: SettingsKeys.downloadAllAudio) as? Bool ?? true,
+            subtitles: defaults.object(forKey: SettingsKeys.downloadSubtitles) as? Bool ?? true)
+    }
+}
+
 struct DownloadRecord: Codable, Identifiable, Equatable {
     enum State: String, Codable { case queued, downloading, completed, failed }
 
@@ -42,6 +74,20 @@ struct DownloadRecord: Codable, Identifiable, Equatable {
     var retryCount: Int?
     /// While queued after an interruption: don't retry before this time.
     var retryAfter: Date?
+    /// Transcoded downloads: the audio track inside the video file.
+    var mainAudioIndex: Int?
+    var mainAudioTitle: String?
+    /// Extra audio tracks and subtitles, loaded one by one after the video.
+    var extras: [DownloadExtra]?
+
+    /// The next extra file to load, once the video is done.
+    var nextExtraIndex: Int? { extras?.firstIndex { $0.isPending } }
+    var finishedExtras: [DownloadExtra] { (extras ?? []).filter { $0.fileName != nil } }
+    /// Video done, extras still loading: "2 of 5".
+    var extrasProgress: (done: Int, total: Int)? {
+        guard fileName != nil, let extras, !extras.isEmpty else { return nil }
+        return (extras.filter { !$0.isPending }.count, extras.count)
+    }
 
     var qualityLabel: String {
         mbit.map { Bitrate.label($0) } ?? String(localized: "Original")
@@ -103,8 +149,19 @@ final class DownloadManager: NSObject {
 
     private static var indexURL: URL { directory.appendingPathComponent("index.json") }
 
-    nonisolated private static func resumeDataURL(for id: String) -> URL {
-        directory.appendingPathComponent(".\(id).resume")
+    nonisolated private static func resumeDataURL(for key: String) -> URL {
+        directory.appendingPathComponent(".\(key).resume")
+    }
+
+    /// Each transfer has a key, used as task description and file name: the item id for the video,
+    /// "<id>.extra<n>" for its n-th extra file (audio track or subtitle).
+    nonisolated static func transferKey(_ id: String, extra: Int?) -> String {
+        extra.map { "\(id).extra\($0)" } ?? id
+    }
+
+    nonisolated static func splitKey(_ key: String) -> (id: String, extra: Int?) {
+        guard let range = key.range(of: ".extra"), let extra = Int(key[range.upperBound...]) else { return (key, nil) }
+        return (String(key[..<range.lowerBound]), extra)
     }
 
     private override init() {
@@ -236,19 +293,45 @@ final class DownloadManager: NSObject {
 
     /// Adds the item to the download queue.
     /// - Parameter mbit: transcode to this bitrate, or `nil` for the original file.
-    func start(item: BaseItem, api: JellyfinAPI, mbit: Double?) {
+    func start(item: BaseItem, api: JellyfinAPI, mbit: Double?, tracks: DownloadTrackOptions = .stored) {
         delete(id: item.id)
 
         let subtitle = [item.seriesName, item.episodeLabel].compactMap { $0 }.joined(separator: " · ")
+        let source = item.primaryMediaSource
         let expected = mbit.flatMap { Bitrate.estimatedBytes(mbit: $0, runTimeTicks: item.runTimeTicks) }
-            ?? item.primaryMediaSource?.size
-        records.insert(DownloadRecord(
+            ?? source?.size
+
+        // A transcoded file carries one audio track (the default one); the others become extra files.
+        // An original file has all embedded tracks already; only external subtitles are missing.
+        var extras: [DownloadExtra] = []
+        let mainAudio = mbit == nil ? nil : TrackSelection.defaults(for: source).audioIndex
+        if mbit != nil, tracks.allAudioTracks {
+            for stream in source?.audioStreams ?? [] where stream.index != mainAudio {
+                extras.append(DownloadExtra(kind: .audio, streamIndex: stream.index, title: stream.label,
+                                            language: stream.language, codec: stream.codec,
+                                            isForced: nil, isDefault: stream.isDefault))
+            }
+        }
+        if tracks.subtitles {
+            for stream in source?.subtitleStreams ?? [] where stream.isTextSubtitle && (mbit != nil || stream.isExternal == true) {
+                extras.append(DownloadExtra(kind: .subtitle, streamIndex: stream.index, title: stream.label,
+                                            language: stream.language, codec: stream.codec,
+                                            isForced: stream.isForced, isDefault: stream.isDefault))
+            }
+        }
+
+        var record = DownloadRecord(
             id: item.id, name: item.name ?? "Untitled", subtitle: subtitle.isEmpty ? nil : subtitle,
-            runTimeTicks: item.runTimeTicks, mbit: mbit, mediaSourceId: item.primaryMediaSource?.id,
+            runTimeTicks: item.runTimeTicks, mbit: mbit, mediaSourceId: source?.id,
             fileName: nil, posterFileName: nil, state: .queued, progress: 0, bytesWritten: 0,
             expectedBytes: expected, errorMessage: nil, createdAt: .now
-        ), at: 0)
+        )
+        record.mainAudioIndex = mainAudio
+        record.mainAudioTitle = mainAudio.flatMap { index in source?.audioStreams.first { $0.index == index }?.label }
+        record.extras = extras.isEmpty ? nil : extras
+        records.insert(record, at: 0)
         saveIndex()
+        DownloadDiagnostics.log("\(item.id): queued \(item.name ?? "") with \(extras.filter { $0.kind == .audio }.count) extra audio track(s), \(extras.filter { $0.kind == .subtitle }.count) subtitle(s)")
 
         if let posterURL = api.posterURL(for: item, maxWidth: 300) {
             Task { await savePoster(from: posterURL, itemId: item.id) }
@@ -257,6 +340,24 @@ final class DownloadManager: NSObject {
         // Started from the foreground: the only moment iOS lets us ask to keep running afterwards.
         DownloadKeepAlive.begin(title: String(localized: "Downloading"), subtitle: item.name ?? "")
         pump()
+    }
+
+    /// Plays a finished download with its extra audio tracks and subtitles.
+    func play(_ record: DownloadRecord, title: String? = nil) {
+        guard let url = fileURL(for: record) else { return }
+        let tracks = extraFiles(for: record).map { file in
+            PlaybackCoordinator.OfflineTrack(kind: file.extra.kind == .audio ? .audio : .subtitle, url: file.url,
+                                             title: file.extra.title, language: file.extra.language)
+        }
+        PlaybackCoordinator.shared.playLocal(fileURL: url, title: title ?? record.name, tracks: tracks,
+                                             embeddedAudioTitle: record.mainAudioTitle)
+    }
+
+    /// Extra audio tracks and subtitles of a finished download, for offline playback.
+    func extraFiles(for record: DownloadRecord) -> [(extra: DownloadExtra, url: URL)] {
+        record.finishedExtras.compactMap { extra in
+            extra.fileName.map { (extra, Self.directory.appendingPathComponent($0)) }
+        }
     }
 
     /// Tries a failed download again, picking up where it stopped when possible.
@@ -274,12 +375,16 @@ final class DownloadManager: NSObject {
     /// Cancels a running or queued download or removes a finished one (file included).
     func delete(id: String) {
         liveTasks.removeValue(forKey: id)?.cancel()
-        try? FileManager.default.removeItem(at: Self.resumeDataURL(for: id))
-        InAppDownloader.removePart(for: id)
         speeds[id] = nil
+        let extraCount = record(for: id)?.extras?.count ?? 0
+        for key in [Self.transferKey(id, extra: nil)] + (0..<extraCount).map({ Self.transferKey(id, extra: $0) }) {
+            try? FileManager.default.removeItem(at: Self.resumeDataURL(for: key))
+            InAppDownloader.removePart(for: key)
+        }
         guard let index = records.firstIndex(where: { $0.id == id }) else { return }
         let record = records.remove(at: index)
-        for url in [fileURL(for: record), posterURL(for: record)].compactMap({ $0 }) {
+        let extraURLs = extraFiles(for: record).map(\.url)
+        for url in ([fileURL(for: record), posterURL(for: record)].compactMap({ $0 }) + extraURLs) {
             try? FileManager.default.removeItem(at: url)
         }
         saveIndex()
@@ -296,7 +401,7 @@ final class DownloadManager: NSObject {
             return
         }
         for task in tasks {
-            guard let id = task.taskDescription,
+            guard let key = task.taskDescription, case let id = Self.splitKey(key).id,
                   let index = records.firstIndex(where: { $0.id == id }), records[index].isActive,
                   !usesInAppEngine else {
                 task.cancel()           // deleted while the app was gone, or the in-app engine is in use
@@ -325,7 +430,7 @@ final class DownloadManager: NSObject {
     private func pump() {
         guard isReconnected else { return }
         while records.filter({ $0.state == .downloading }).count < Self.maxConcurrent,
-              let index = records.lastIndex(where: { $0.state == .queued && ($0.retryCount ?? 0) > 0 })
+              let index = records.lastIndex(where: { $0.state == .queued && (($0.retryCount ?? 0) > 0 || $0.fileName != nil) })
                 ?? records.lastIndex(where: { $0.state == .queued }) {
             begin(at: index)
         }
@@ -336,93 +441,97 @@ final class DownloadManager: NSObject {
     }
 
     private func begin(at index: Int) {
-        if usesInAppEngine {
-            beginInApp(at: index)
+        let record = records[index]
+        let id = record.id
+        // The video first, then the extra files one by one.
+        let extra = record.fileName == nil ? nil : record.nextExtraIndex
+        if record.fileName != nil, extra == nil {
+            complete(at: index)         // nothing left (e.g. the last extra finished while the app was gone)
             return
         }
-        let record = records[index]
-        let id = record.id
-        let task: URLSessionDownloadTask
-
-        if let resumeData = try? Data(contentsOf: Self.resumeDataURL(for: id)) {
-            // Picks up the bytes already on disk instead of starting over.
-            task = session.downloadTask(withResumeData: resumeData)
-            try? FileManager.default.removeItem(at: Self.resumeDataURL(for: id))
-            downloadLog.notice("Resuming \(id, privacy: .public)")
-            DownloadDiagnostics.log("\(id): resuming from \(record.bytesWritten) bytes")
-        } else {
-            // The token comes from the Keychain (readable after first unlock), so this also works when
-            // the app was relaunched in the background with the screen locked.
-            guard let session = SessionStorage.load() else {
-                fail(at: index, message: String(localized: "Not signed in."))
-                return
-            }
-            let api = JellyfinAPI(session: session)
-            let url = record.mbit.map {
-                api.transcodedDownloadURL(itemId: id, mediaSourceId: record.mediaSourceId, mbit: $0)
-            } ?? api.originalDownloadURL(itemId: id)
-            var request = URLRequest(url: url)
-            request.setValue(api.authorizationHeader, forHTTPHeaderField: "Authorization")
-            task = self.session.downloadTask(with: request)
-            records[index].bytesWritten = 0
-            records[index].progress = 0
-            downloadLog.notice("Starting \(id, privacy: .public)")
-            DownloadDiagnostics.log("\(id): starting \(record.mbit.map { "transcoded \($0) Mbit/s" } ?? "original") download")
-        }
-
-        task.taskDescription = id
-        // A retry waits out its backoff inside the system's download service, so it still happens
-        // when the app is suspended in the background.
-        if let retryAfter = record.retryAfter, retryAfter > .now {
-            task.earliestBeginDate = retryAfter
-        }
-        if let expected = record.expectedBytes, expected > 0 {
-            task.countOfBytesClientExpectsToReceive = expected
-        }
-        liveTasks[id] = task
-        attemptStartBytes[id] = records[index].bytesWritten
-        records[index].state = .downloading
-        records[index].retryAfter = nil
-        saveIndex()
-        task.resume()
-        DownloadKeepAlive.update(title: String(localized: "Downloading"), subtitle: record.name)
-    }
-
-    /// The in-app engine: a data task writing straight into the download folder.
-    private func beginInApp(at index: Int) {
-        let record = records[index]
-        let id = record.id
+        // The token comes from the Keychain (readable after first unlock), so this also works when
+        // the app was relaunched in the background with the screen locked.
         guard let stored = SessionStorage.load() else {
             fail(at: index, message: String(localized: "Not signed in."))
             return
         }
         let api = JellyfinAPI(session: stored)
-        let url = record.mbit.map {
-            api.transcodedDownloadURL(itemId: id, mediaSourceId: record.mediaSourceId, mbit: $0)
-        } ?? api.originalDownloadURL(itemId: id)
+        let key = Self.transferKey(id, extra: extra)
+        let url: URL
+        let what: String
+        if let extra, let item = record.extras?[extra] {
+            switch item.kind {
+            case .audio:
+                url = api.audioTrackDownloadURL(itemId: id, mediaSourceId: record.mediaSourceId, audioStreamIndex: item.streamIndex,
+                                                audioBitrate: JellyfinAPI.downloadAudioBitrate(forMbit: record.mbit ?? 4))
+                what = "audio track \(item.streamIndex) (\(item.title))"
+            case .subtitle:
+                guard let subtitleURL = api.subtitleDownloadURL(itemId: id, mediaSourceId: record.mediaSourceId,
+                                                                streamIndex: item.streamIndex, codec: item.codec) else {
+                    skipExtra(at: index, extra: extra, reason: "no media source")
+                    return
+                }
+                url = subtitleURL
+                what = "subtitle \(item.streamIndex) (\(item.title))"
+            }
+        } else {
+            url = record.mbit.map {
+                api.transcodedDownloadURL(itemId: id, mediaSourceId: record.mediaSourceId, mbit: $0, audioStreamIndex: record.mainAudioIndex)
+            } ?? api.originalDownloadURL(itemId: id)
+            what = record.mbit.map { "transcoded \($0) Mbit/s video" } ?? "original file"
+        }
         var request = URLRequest(url: url)
         request.setValue(api.authorizationHeader, forHTTPHeaderField: "Authorization")
-        // Original files can continue from the part file; a transcode is a new stream every time.
-        let resume = record.mbit == nil
-        try? FileManager.default.removeItem(at: Self.resumeDataURL(for: id))
-        let task = inApp.makeTask(id: id, request: request, resume: resume)
-        let existing = resume ? InAppDownloader.partSize(for: id) : 0
-        records[index].bytesWritten = existing
-        if let expected = record.expectedBytes, expected > 0 {
-            records[index].progress = min(0.99, Double(existing) / Double(expected))
+
+        let delay = record.retryAfter.map { $0.timeIntervalSinceNow } ?? 0
+        let task: URLSessionTask
+        if usesInAppEngine {
+            // Original files can continue from the part file; a transcode is a new stream every time.
+            let resume = extra == nil && record.mbit == nil
+            try? FileManager.default.removeItem(at: Self.resumeDataURL(for: key))
+            task = inApp.makeTask(id: key, request: request, resume: resume)
+            if extra == nil {
+                let existing = resume ? InAppDownloader.partSize(for: key) : 0
+                records[index].bytesWritten = existing
+                if let expected = record.expectedBytes, expected > 0 {
+                    records[index].progress = min(0.99, Double(existing) / Double(expected))
+                } else {
+                    records[index].progress = 0
+                }
+            }
+            DownloadDiagnostics.log("\(id): starting \(what) in the app"
+                                    + (records[index].bytesWritten > 0 && extra == nil ? " from \(records[index].bytesWritten) bytes" : ""))
         } else {
-            records[index].progress = 0
+            let downloadTask: URLSessionDownloadTask
+            if let resumeData = try? Data(contentsOf: Self.resumeDataURL(for: key)) {
+                // Picks up the bytes already on disk instead of starting over.
+                downloadTask = session.downloadTask(withResumeData: resumeData)
+                try? FileManager.default.removeItem(at: Self.resumeDataURL(for: key))
+                DownloadDiagnostics.log("\(id): resuming \(what)")
+            } else {
+                downloadTask = session.downloadTask(with: request)
+                if extra == nil {
+                    records[index].bytesWritten = 0
+                    records[index].progress = 0
+                }
+                DownloadDiagnostics.log("\(id): starting \(what)")
+            }
+            downloadTask.taskDescription = key
+            // A retry waits out its backoff inside the system's download service, so it still happens
+            // when the app is suspended in the background.
+            if delay > 0 { downloadTask.earliestBeginDate = record.retryAfter }
+            if extra == nil, let expected = record.expectedBytes, expected > 0 {
+                downloadTask.countOfBytesClientExpectsToReceive = expected
+            }
+            task = downloadTask
         }
-        DownloadDiagnostics.log("\(id): starting \(record.mbit.map { "transcoded \($0) Mbit/s" } ?? "original") download in the app"
-                                + (existing > 0 ? " from \(existing) bytes" : ""))
 
         liveTasks[id] = task
-        attemptStartBytes[id] = existing
+        attemptStartBytes[id] = records[index].bytesWritten
         records[index].state = .downloading
-        let delay = record.retryAfter.map { $0.timeIntervalSinceNow } ?? 0
         records[index].retryAfter = nil
         saveIndex()
-        if delay > 0 {
+        if delay > 0, task is URLSessionDataTask {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard self?.liveTasks[id] === task else { return }    // deleted or replaced meanwhile
                 task.resume()
@@ -430,7 +539,8 @@ final class DownloadManager: NSObject {
         } else {
             task.resume()
         }
-        if UIApplication.shared.applicationState == .background { startBackgroundKeepAliveIfNeeded() }
+        DownloadKeepAlive.update(title: String(localized: "Downloading"), subtitle: record.name)
+        if usesInAppEngine, UIApplication.shared.applicationState == .background { startBackgroundKeepAliveIfNeeded() }
     }
 
     @objc private func appDidEnterBackground() {
@@ -472,8 +582,13 @@ final class DownloadManager: NSObject {
 
     // MARK: - Events from the session (main actor)
 
-    private func progressChanged(id: String, task: URLSessionTask, written: Int64, expected: Int64) {
+    private func progressChanged(id key: String, task: URLSessionTask, written: Int64, expected: Int64) {
+        let (id, extra) = Self.splitKey(key)
         guard liveTasks[id] === task, let index = records.firstIndex(where: { $0.id == id }) else { return }
+        if extra != nil {           // extra files: only the "x of y" count is shown
+            if records[index].errorMessage != nil { records[index].errorMessage = nil }
+            return
+        }
         records[index].bytesWritten = written
         if records[index].errorMessage != nil { records[index].errorMessage = nil }     // data is flowing again
         let total = expected > 0 ? expected : (records[index].expectedBytes ?? 0)
@@ -499,11 +614,12 @@ final class DownloadManager: NSObject {
         if now.timeIntervalSince(lastIndexSave) > 10 { saveIndex() }
     }
 
-    private func finished(id: String, task: URLSessionTask?, fileName: String, size: Int64) {
+    private func finished(id key: String, task: URLSessionTask?, fileName: String, size: Int64) {
         if indexUnavailable {
-            pendingCompletions.append((id, fileName, size))     // keep the file; filed after unlock
+            pendingCompletions.append((key, fileName, size))    // keep the file; filed after unlock
             return
         }
+        let (id, extra) = Self.splitKey(key)
         if let current = liveTasks[id], current !== task { current.cancel() }   // a duplicate restart lost the race
         liveTasks[id] = nil
         clearTransient(id)
@@ -512,11 +628,32 @@ final class DownloadManager: NSObject {
             pump()
             return
         }
-        records[index].fileName = fileName
-        records[index].bytesWritten = size
-        records[index].expectedBytes = size
-        records[index].progress = 1
+        records[index].errorMessage = nil
+        records[index].retryCount = nil
+        records[index].retryAfter = nil
+        if let extra, records[index].extras?.indices.contains(extra) == true {
+            records[index].extras?[extra].fileName = fileName
+            DownloadDiagnostics.log("\(id): extra \(extra) stored (\(size) bytes)")
+        } else {
+            records[index].fileName = fileName
+            records[index].bytesWritten = size
+            records[index].expectedBytes = size
+            records[index].progress = 1
+            DownloadDiagnostics.log("\(id): video stored (\(size) bytes)")
+        }
+        if records[index].fileName == nil || records[index].nextExtraIndex != nil {
+            records[index].state = .queued          // next part; pump picks it up first
+            saveIndex()
+            pump()
+        } else {
+            complete(at: index)
+        }
+    }
+
+    private func complete(at index: Int) {
+        let id = records[index].id
         records[index].state = .completed
+        records[index].progress = 1
         records[index].errorMessage = nil
         records[index].retryCount = nil
         records[index].retryAfter = nil
@@ -527,29 +664,56 @@ final class DownloadManager: NSObject {
         pump()
     }
 
+    /// An extra file the server can't deliver doesn't fail the whole download.
+    private func skipExtra(at index: Int, extra: Int, reason: String) {
+        let id = records[index].id
+        records[index].extras?[extra].skipped = true
+        records[index].retryCount = nil
+        records[index].retryAfter = nil
+        records[index].errorMessage = nil
+        DownloadDiagnostics.log("\(id): skipping extra \(extra) – \(reason)")
+        if records[index].fileName == nil || records[index].nextExtraIndex != nil {
+            records[index].state = .queued
+            saveIndex()
+            pump()
+        } else {
+            complete(at: index)
+        }
+    }
+
     /// The transfer ended without a file (network error, server error, cancellation).
-    private func ended(id: String, task: URLSessionTask, error: NSError?, httpStatus: Int?) {
+    private func ended(id key: String, task: URLSessionTask, error: NSError?, httpStatus: Int?) {
         if indexUnavailable {
             // Keep the partial data; after unlock the download is requeued and resumes from it.
             if let resumeData = error?.userInfo[NSURLSessionDownloadTaskResumeData] as? Data {
-                try? resumeData.write(to: Self.resumeDataURL(for: id), options: .atomic)
+                try? resumeData.write(to: Self.resumeDataURL(for: key), options: .atomic)
             }
             return
         }
+        let (id, extra) = Self.splitKey(key)
         if let current = liveTasks[id], current !== task { return }     // an older attempt; ignore
         liveTasks[id] = nil
         clearTransient(id)
         guard let index = records.firstIndex(where: { $0.id == id }), records[index].isActive else {
-            try? FileManager.default.removeItem(at: Self.resumeDataURL(for: id))
+            try? FileManager.default.removeItem(at: Self.resumeDataURL(for: key))
             pump()
             return
         }
         // Keep what was transferred so the next attempt continues from there; but if storing the file
         // was the problem, start the next attempt clean.
         if let error, Self.isStorageError(error) {
-            try? FileManager.default.removeItem(at: Self.resumeDataURL(for: id))
+            try? FileManager.default.removeItem(at: Self.resumeDataURL(for: key))
         } else if let resumeData = error?.userInfo[NSURLSessionDownloadTaskResumeData] as? Data {
-            try? resumeData.write(to: Self.resumeDataURL(for: id), options: .atomic)
+            try? resumeData.write(to: Self.resumeDataURL(for: key), options: .atomic)
+        }
+        // A video that is done but whose extra file can't be fetched still completes, without it.
+        func giveUp(_ message: String) {
+            if let extra {
+                skipExtra(at: index, extra: extra, reason: message)
+            } else {
+                fail(at: index, message: message)
+                pump()
+            }
         }
 
         if task is URLSessionDownloadTask, let error, Self.isStorageError(error),
@@ -572,15 +736,18 @@ final class DownloadManager: NSObject {
             records[index].errorMessage = String(localized: "iPhone locked – trying again shortly")
             downloadLog.notice("Storage locked for \(id, privacy: .public); retrying in 60 s")
             saveIndex()
-        } else if let httpStatus, !Self.isRetryable(status: httpStatus) {
-            fail(at: index, message: Self.message(forStatus: httpStatus))
+        } else if let httpStatus, !Self.isRetryable(status: httpStatus) || (extra != nil && httpStatus >= 500 && (records[index].retryCount ?? 0) >= 2) {
+            giveUp(Self.message(forStatus: httpStatus))
+            return
         } else if let error, !Self.isRetryable(error), !Self.isStorageError(error) {
-            fail(at: index, message: error.localizedDescription)
+            giveUp(error.localizedDescription)
+            return
         } else {
             let attempt = (records[index].retryCount ?? 0) + 1
             if attempt > Self.maxRetries {
-                fail(at: index, message: httpStatus.map(Self.message(forStatus:))
-                     ?? error?.localizedDescription ?? String(localized: "Download failed."))
+                giveUp(httpStatus.map(Self.message(forStatus:))
+                       ?? error?.localizedDescription ?? String(localized: "Download failed."))
+                return
             } else {
                 // Force quit, network loss, server hiccup: wait a bit, then try again. The wait happens
                 // in the download service (earliestBeginDate), so it also works while suspended.

@@ -472,10 +472,49 @@ struct JellyfinAPI {
         url("Items/\(itemId)/Download", ["api_key": accessToken])
     }
 
+    /// A text subtitle as a file to download (external, or embedded and extracted by the server).
+    func subtitleDownloadURL(itemId: String, mediaSourceId: String?, streamIndex: Int, codec: String?) -> URL? {
+        guard let mediaSourceId else { return nil }
+        let format: String
+        switch (codec ?? "").lowercased() {
+        case "ass": format = "ass"
+        case "ssa": format = "ssa"
+        case "vtt", "webvtt": format = "vtt"
+        default: format = "srt"
+        }
+        return url("Videos/\(itemId)/\(mediaSourceId)/Subtitles/\(streamIndex)/Stream.\(format)", ["api_key": accessToken])
+    }
+
+    /// One audio track for an offline copy. Jellyfin's audio-only endpoint always takes the default
+    /// track (it doesn't map streams), so this asks for a video transcode with the chosen audio and a
+    /// tiny placeholder picture; mpv adds only its audio as an extra track.
+    func audioTrackDownloadURL(itemId: String, mediaSourceId: String?, audioStreamIndex: Int, audioBitrate: Int) -> URL {
+        url("Videos/\(itemId)/stream.mkv", [
+            "mediaSourceId": mediaSourceId,
+            "deviceId": Self.deviceId,
+            "playSessionId": UUID().uuidString.replacingOccurrences(of: "-", with: ""),
+            "api_key": accessToken,
+            "videoCodec": "h264",
+            "videoBitRate": "48000",
+            "maxWidth": "160",
+            "maxHeight": "90",
+            "maxFramerate": "5",
+            "audioCodec": "aac",
+            "audioBitRate": String(audioBitrate),
+            "maxAudioChannels": "2",
+            "audioStreamIndex": String(audioStreamIndex),
+        ])
+    }
+
+    /// Audio bitrate used for transcoded downloads at this total bitrate.
+    static func downloadAudioBitrate(forMbit mbit: Double) -> Int {
+        Bitrate.bps(forMbit: mbit) >= 1_500_000 ? 192_000 : 128_000
+    }
+
     /// A progressive H.264/AAC MP4 transcoded by the server at the given total bitrate.
-    func transcodedDownloadURL(itemId: String, mediaSourceId: String?, mbit: Double) -> URL {
+    func transcodedDownloadURL(itemId: String, mediaSourceId: String?, mbit: Double, audioStreamIndex: Int? = nil) -> URL {
         let total = Bitrate.bps(forMbit: mbit)
-        let audio = total >= 1_500_000 ? 192_000 : 128_000
+        let audio = Self.downloadAudioBitrate(forMbit: mbit)
         let video = max(total - audio, 250_000)
         var query: [String: String?] = [
             "mediaSourceId": mediaSourceId,
@@ -488,6 +527,7 @@ struct JellyfinAPI {
             "audioBitRate": String(audio),
             "maxAudioChannels": "2",
         ]
+        if let audioStreamIndex { query["audioStreamIndex"] = String(audioStreamIndex) }
         if let width = Bitrate.maxWidth(forMbit: mbit) { query["maxWidth"] = String(width) }
         return url("Videos/\(itemId)/stream.mp4", query)
     }
