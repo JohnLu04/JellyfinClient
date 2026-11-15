@@ -25,6 +25,14 @@ struct UserPolicy: Decodable {
     let enableVideoPlaybackTranscoding: Bool?
 }
 
+/// One category from `Movies/Recommendations`.
+struct Recommendation: Decodable {
+    let items: [BaseItem]
+    let recommendationType: String?
+    let baselineItemName: String?
+    let categoryId: String?
+}
+
 struct ItemsResult: Decodable {
     let items: [BaseItem]
     let totalRecordCount: Int?
@@ -132,6 +140,9 @@ struct BaseItem: Decodable, Identifiable, Hashable {
     let id: String
     let name: String?
     var originalTitle: String? = nil
+    /// Genre lists (`fields=ItemCounts`): titles per type.
+    var movieCount: Int? = nil
+    var seriesCount: Int? = nil
     let type: String?
     let collectionType: String?
     let isFolder: Bool?

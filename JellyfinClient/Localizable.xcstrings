@@ -231,6 +231,16 @@
         }
       }
     },
+    "Action Movies": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Action-Filme"
+          }
+        }
+      }
+    },
     "Add to Favorites": {
       "localizations": {
         "de": {
@@ -311,6 +321,26 @@
         }
       }
     },
+    "Animated Movies for the Whole Family": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Animationsfilme für die ganze Familie"
+          }
+        }
+      }
+    },
+    "Anime": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anime"
+          }
+        }
+      }
+    },
     "Apple Player (AVPlayer)": {
       "localizations": {
         "de": {
@@ -357,6 +387,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Publikum"
+          }
+        }
+      }
+    },
+    "Audience Favorites": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Publikumshits"
           }
         }
       }
@@ -427,6 +467,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Durchschnittliche Bitrate"
+          }
+        }
+      }
+    },
+    "Because You Liked “%@”": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weil dir „%@“ gefällt"
+          }
+        }
+      }
+    },
+    "Because You Watched “%@”": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weil du „%@“ angesehen hast"
           }
         }
       }
@@ -751,12 +811,32 @@
         }
       }
     },
+    "Crime Series": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Krimiserien"
+          }
+        }
+      }
+    },
     "Critics": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Kritiker"
+          }
+        }
+      }
+    },
+    "Cult Series Everyone Knows": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kultserien, die jeder kennt"
           }
         }
       }
@@ -861,6 +941,16 @@
         }
       }
     },
+    "Directed by %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Von %@"
+          }
+        }
+      }
+    },
     "Director: ": {
       "localizations": {
         "de": {
@@ -907,6 +997,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Im Request-Tab Filme und Serien entdecken und anfragen."
+          }
+        }
+      }
+    },
+    "Documentaries That Move You": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dokus, die bewegen"
           }
         }
       }
@@ -1151,6 +1251,16 @@
         }
       }
     },
+    "Exciting Series": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aufregende Serien"
+          }
+        }
+      }
+    },
     "External Subtitles (%lld)": {
       "localizations": {
         "de": {
@@ -1281,6 +1391,16 @@
         }
       }
     },
+    "For Fun Nights with Friends": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Für lustige WG-Abende"
+          }
+        }
+      }
+    },
     "Format": {
       "localizations": {
         "de": {
@@ -1327,6 +1447,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Weltweit"
+          }
+        }
+      }
+    },
+    "Goosebumps Guaranteed": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gänsehaut garantiert"
+          }
+        }
+      }
+    },
+    "Gripping Thrillers": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Packende Thriller"
           }
         }
       }
@@ -1421,6 +1561,16 @@
         }
       }
     },
+    "Korean Series": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Koreanische Serien"
+          }
+        }
+      }
+    },
     "Libraries": {
       "localizations": {
         "de": {
@@ -1467,6 +1617,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Lokale Datei"
+          }
+        }
+      }
+    },
+    "Made in Germany": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Made in Germany"
           }
         }
       }
@@ -2331,6 +2491,16 @@
         }
       }
     },
+    "Sci-Fi & Fantasy Series": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sci-Fi- & Fantasy-Serien"
+          }
+        }
+      }
+    },
     "Search": {
       "localizations": {
         "de": {
@@ -2501,6 +2671,16 @@
         }
       }
     },
+    "Series That Still Impress 10 Years Later": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Serien, die auch 10 Jahre später noch beeindrucken"
+          }
+        }
+      }
+    },
     "Server": {
       "localizations": {
         "de": {
@@ -2611,6 +2791,16 @@
         }
       }
     },
+    "Starring %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mit %@"
+          }
+        }
+      }
+    },
     "Storage": {
       "localizations": {
         "de": {
@@ -2717,6 +2907,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Tippe bei einem Film oder einer Serie auf das Herz, um ihn hier wiederzufinden."
+          }
+        }
+      }
+    },
+    "Teen Series": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Teen-Serien"
           }
         }
       }
@@ -2961,12 +3161,32 @@
         }
       }
     },
+    "True Stories": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wirkliche Geschichten"
+          }
+        }
+      }
+    },
     "Try Again": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Erneut versuchen"
+          }
+        }
+      }
+    },
+    "US Series": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "US-Serien"
           }
         }
       }

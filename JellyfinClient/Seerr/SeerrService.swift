@@ -555,6 +555,22 @@ struct SeerrClient: Sendable {
         return DiscoverPage(items: discoverItems(from: result), totalPages: max(1, result.totalPages ?? 1))
     }
 
+    /// Movies or series from Seerr's discover endpoint with any TMDB filters (genre, keywords,
+    /// original language via `language`, dates, votes, sort).
+    func discover(_ type: SeerrMediaType, filters: [(String, String)], page: Int = 1) async throws -> [DiscoverItem] {
+        let path = type == .movie ? "/api/v1/discover/movies" : "/api/v1/discover/tv"
+        let result: SeerrSearchPage = try await get(path, query: [("page", String(page))] + filters)
+        return discoverItems(from: result)
+    }
+
+    /// TMDB keyword id for a name ("based on true story" → 9672), via Seerr's keyword search.
+    func keywordID(_ name: String) async throws -> Int? {
+        struct Keyword: Decodable { let id: Int; let name: String }
+        struct KeywordPage: Decodable { let results: [Keyword] }
+        let page: KeywordPage = try await get("/api/v1/search/keyword", query: [("query", name), ("page", "1")])
+        return page.results.first { $0.name.lowercased() == name.lowercased() }?.id ?? page.results.first?.id
+    }
+
     func genres(_ type: SeerrMediaType) async throws -> [SeerrGenre] {
         try await get("/api/v1/genres/\(type.rawValue)")
     }

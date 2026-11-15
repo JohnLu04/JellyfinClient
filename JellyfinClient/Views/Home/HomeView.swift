@@ -67,13 +67,11 @@ struct HomeView: View {
                             }
                         }
 
-                        if !libraries.isEmpty {
-                            row("Libraries") {
-                                ForEach(libraries) { library in
-                                    NavigationLink(value: library) { LibraryTile(item: library).frame(width: 230) }
-                                        .buttonStyle(.plain)
-                                }
-                            }
+                        // Netflix-style categories (Seerr) and Jellyfin's suggestions from the library.
+                        if hasLoaded {
+                            HomeCategoriesSection(api: app.api,
+                                                  onOpenItem: { path.append($0) },
+                                                  onOpenSeerr: { path.append($0) })
                         }
                     }
                     .padding(.bottom, 24)

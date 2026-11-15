@@ -204,6 +204,40 @@ struct JellyfinAPI {
         return result.items
     }
 
+    /// Jellyfin's own suggestions from the library: "Because you watched …", "Starring …", "Directed by …".
+    func movieRecommendations(categories: Int = 4, itemsPerCategory: Int = 16) async throws -> [Recommendation] {
+        try await get("Movies/Recommendations", [
+            "userId": userId, "categoryLimit": String(categories), "itemLimit": String(itemsPerCategory),
+            "fields": "PrimaryImageAspectRatio,ProductionYear",
+        ])
+    }
+
+    /// Genres used in the library for movies or series, with how many titles each has.
+    func genres(itemType: String) async throws -> [BaseItem] {
+        let result: ItemsResult = try await get("Genres", [
+            "userId": userId, "includeItemTypes": itemType, "recursive": "true", "fields": "ItemCounts",
+            "enableTotalRecordCount": "false",
+        ])
+        return result.items
+    }
+
+    /// Movies or series of one genre from the library, in random order.
+    func items(genre: String, itemType: String, limit: Int = 20) async throws -> [BaseItem] {
+        let result: ItemsResult = try await get("Items", [
+            "userId": userId, "genres": genre, "includeItemTypes": itemType, "recursive": "true",
+            "sortBy": "Random", "limit": String(limit), "fields": "PrimaryImageAspectRatio,ProductionYear",
+            "enableTotalRecordCount": "false",
+        ])
+        return result.items
+    }
+
+    /// The library copy of a TMDB title (for Seerr items that are available): title search, then the
+    /// TMDB id must match.
+    func libraryItem(tmdbID: Int, title: String, isSeries: Bool) async -> BaseItem? {
+        let results = (try? await searchItems(title, limit: 20)) ?? []
+        return results.first { $0.type == (isSeries ? "Series" : "Movie") && $0.providerID("Tmdb") == String(tmdbID) }
+    }
+
     /// The user's favorite movies, series and episodes.
     func favoriteItems() async throws -> [BaseItem] {
         let result: ItemsResult = try await get("Items", [
