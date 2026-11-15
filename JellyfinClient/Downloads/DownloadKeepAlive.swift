@@ -66,14 +66,20 @@ private final class Keeper: @unchecked Sendable {
                 task.updateTitle(title, subtitle: subtitle)
                 return
             }
-            guard !self.isPending, self.isPermitted else { return }
+            guard !self.isPending else { return }
+            guard self.isPermitted else {
+                DownloadDiagnostics.log("Background keep-alive unavailable: \(self.identifier) isn't listed in Info.plist")
+                return
+            }
             self.registerIfNeeded()
             let request = BGContinuedProcessingTaskRequest(identifier: self.identifier, title: title, subtitle: subtitle)
             do {
                 try BGTaskScheduler.shared.submit(request)
                 self.isPending = true
+                DownloadDiagnostics.log("Background keep-alive requested")
             } catch {
                 downloadLog.error("Keep-alive submit failed: \(error.localizedDescription, privacy: .public)")
+                DownloadDiagnostics.log("Background keep-alive refused by iOS: \(DownloadDiagnostics.describe(error as NSError))")
             }
         }
     }
@@ -97,6 +103,7 @@ private final class Keeper: @unchecked Sendable {
             task.progress.completedUnitCount = task.progress.totalUnitCount
             task.setTaskCompleted(success: true)
             self.task = nil
+            DownloadDiagnostics.log("Background keep-alive finished (queue empty)")
         }
     }
 
@@ -114,12 +121,14 @@ private final class Keeper: @unchecked Sendable {
             // background session; only the app gets suspended again.
             continued.expirationHandler = {
                 self.queue.async {
+                    DownloadDiagnostics.log("Background keep-alive ended by iOS (downloads continue, just slower in the background)")
                     self.task?.setTaskCompleted(success: false)
                     self.task = nil
                 }
             }
             self.task = continued
             self.isPending = false
+            DownloadDiagnostics.log("Background keep-alive running – the app keeps working in the background")
         }
     }
 }

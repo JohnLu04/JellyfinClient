@@ -12,6 +12,7 @@
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>$(PRODUCT_BUNDLE_IDENTIFIER).downloads</string>
+		<string>app.durian4868.plantain2660.downloads</string>
 	</array>
 	<key>UIBackgroundModes</key>
 	<array>
