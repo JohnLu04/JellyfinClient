@@ -67,19 +67,30 @@ enum HomeCategories {
             HomeCategory(id: "docs", title: "Documentaries That Move You", queries: [
                 .init(type: .movie, filters: [popular, ("genre", "99"), ("voteCountGte", "100")]),
                 .init(type: .tv, filters: [popular, ("genre", "99"), ("voteCountGte", "50")])]),
+            HomeCategory(id: "scifi-movies", title: "Mind-Bending Sci-Fi Movies", queries: [
+                .init(type: .movie, filters: [popular, ("genre", "878"), ("voteCountGte", "1000")])]),
+            HomeCategory(id: "romance", title: "Romantic Movies", queries: [
+                .init(type: .movie, filters: [popular, ("genre", "10749"), ("voteCountGte", "500")])]),
+            HomeCategory(id: "comedy-movies", title: "Comedies to Unwind", queries: [
+                .init(type: .movie, filters: [popular, ("genre", "35"), ("voteCountGte", "800")])]),
+            HomeCategory(id: "mystery", title: "Mysterious Series", queries: [
+                .init(type: .tv, filters: [popular, ("genre", "9648"), ("voteCountGte", "200")])]),
+            HomeCategory(id: "superheroes", title: "Superhero Movies", queries: [
+                .init(type: .movie, filters: [popular, ("voteCountGte", "1000")], keyword: "superhero")]),
+            HomeCategory(id: "hidden-gems", title: "Hidden Gems", queries: [
+                .init(type: .movie, filters: [("sortBy", "vote_average.desc"), ("voteAverageGte", "7.5"),
+                                              ("voteCountGte", "300"), ("voteCountLte", "3000")])]),
+            HomeCategory(id: "nineties", title: "Cult Classics from the 90s", queries: [
+                .init(type: .movie, filters: [("sortBy", "vote_count.desc"),
+                                              ("primaryReleaseDateGte", "1990-01-01"), ("primaryReleaseDateLte", "1999-12-31")])]),
+            HomeCategory(id: "miniseries", title: "Miniseries for One Weekend", queries: [
+                .init(type: .tv, filters: [popular, ("voteCountGte", "100")], keyword: "miniseries")]),
         ]
     }
 
-    /// The rows in a different order every day (like Netflix rearranging its Home screen), the same all day.
-    static var forToday: [HomeCategory] {
-        var rows = all
-        var seed = UInt64(Calendar.current.ordinality(of: .day, in: .era, for: .now) ?? 1)
-        for index in stride(from: rows.count - 1, to: 0, by: -1) {
-            seed = seed &* 6364136223846793005 &+ 1442695040888963407
-            rows.swapAt(index, Int((seed >> 33) % UInt64(index + 1)))
-        }
-        return rows
-    }
+    /// The rows in a new random order on every app launch (like Netflix rearranging its Home screen),
+    /// kept while the app runs so the screen doesn't jump around.
+    static let shuffledForLaunch: [HomeCategory] = all.shuffled()
 }
 
 // MARK: - Loading
@@ -126,9 +137,8 @@ actor HomeCategoryStore {
 
 // MARK: - Views
 
-/// The rows below "Recently Added": Jellyfin's suggestions from the library mixed with Netflix-style
-/// categories from Seerr. Without Seerr, rows of the library's own genres instead. Rows load when they
-/// scroll into view.
+/// The rows below "Recently Added": Netflix-style categories from Seerr. Without Seerr, rows of the
+/// library's own genres instead. Rows load when they scroll into view.
 struct HomeCategoriesSection: View {
     @Environment(SeerrStore.self) private var seerr
 
@@ -136,7 +146,6 @@ struct HomeCategoriesSection: View {
     let onOpenItem: (BaseItem) -> Void
     let onOpenSeerr: (DiscoverItem) -> Void
 
-    @State private var recommendations: [Recommendation] = []
     @State private var genreRows: [(title: String, items: [BaseItem])] = []
 
     private enum Row: Identifiable {
@@ -151,22 +160,10 @@ struct HomeCategoriesSection: View {
     }
 
     private var rows: [Row] {
-        let library = recommendations.enumerated().compactMap { index, recommendation -> Row? in
-            guard recommendation.items.count >= 4 else { return nil }
-            return .library(id: recommendation.categoryId ?? "\(index)", title: Self.title(for: recommendation),
-                            items: recommendation.items)
-        }
         guard seerr.isConnected else {
-            return library + genreRows.map { .library(id: "genre-\($0.title)", title: $0.title, items: $0.items) }
+            return genreRows.map { .library(id: "genre-\($0.title)", title: $0.title, items: $0.items) }
         }
-        // A library suggestion after every third Seerr row.
-        var result: [Row] = []
-        var pending = library[...]
-        for (index, category) in HomeCategories.forToday.enumerated() {
-            result.append(.seerr(category))
-            if index % 3 == 1, let next = pending.popFirst() { result.append(next) }
-        }
-        return result + pending
+        return HomeCategories.shuffledForLaunch.map { .seerr($0) }
     }
 
     var body: some View {
@@ -185,7 +182,7 @@ struct HomeCategoriesSection: View {
                 }
             }
         }
-        .task(id: api?.userId) { await loadLibraryRows() }
+        .task(id: "\(api?.userId ?? "")-\(seerr.isConnected)") { await loadGenreRows() }
     }
 
     /// Available titles open their page in the library; the rest open Seerr to request them.
@@ -203,10 +200,8 @@ struct HomeCategoriesSection: View {
         }
     }
 
-    private func loadLibraryRows() async {
-        guard let api else { return }
-        recommendations = (try? await api.movieRecommendations()) ?? []
-        guard !seerr.isConnected else { return }
+    private func loadGenreRows() async {
+        guard let api, !seerr.isConnected else { return }
         // Without Seerr: the library's biggest genres, two from movies and two from series.
         var rows: [(String, [BaseItem])] = []
         for (type, label) in [("Movie", String(localized: "Movies")), ("Series", String(localized: "Series"))] {
@@ -219,17 +214,6 @@ struct HomeCategoriesSection: View {
             }
         }
         genreRows = rows
-    }
-
-    private static func title(for recommendation: Recommendation) -> String {
-        let name = recommendation.baselineItemName ?? ""
-        switch recommendation.recommendationType {
-        case "SimilarToRecentlyPlayed": return String(localized: "Because You Watched “\(name)”")
-        case "SimilarToLikedItem": return String(localized: "Because You Liked “\(name)”")
-        case "HasDirectorFromRecentlyPlayed", "HasLikedDirector": return String(localized: "Directed by \(name)")
-        case "HasActorFromRecentlyPlayed", "HasLikedActor": return String(localized: "Starring \(name)")
-        default: return name
-        }
     }
 }
 

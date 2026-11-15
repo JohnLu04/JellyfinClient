@@ -204,14 +204,6 @@ struct JellyfinAPI {
         return result.items
     }
 
-    /// Jellyfin's own suggestions from the library: "Because you watched …", "Starring …", "Directed by …".
-    func movieRecommendations(categories: Int = 4, itemsPerCategory: Int = 16) async throws -> [Recommendation] {
-        try await get("Movies/Recommendations", [
-            "userId": userId, "categoryLimit": String(categories), "itemLimit": String(itemsPerCategory),
-            "fields": "PrimaryImageAspectRatio,ProductionYear",
-        ])
-    }
-
     /// Genres used in the library for movies or series, with how many titles each has.
     func genres(itemType: String) async throws -> [BaseItem] {
         let result: ItemsResult = try await get("Genres", [

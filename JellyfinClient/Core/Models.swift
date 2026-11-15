@@ -25,14 +25,6 @@ struct UserPolicy: Decodable {
     let enableVideoPlaybackTranscoding: Bool?
 }
 
-/// One category from `Movies/Recommendations`.
-struct Recommendation: Decodable {
-    let items: [BaseItem]
-    let recommendationType: String?
-    let baselineItemName: String?
-    let categoryId: String?
-}
-
 struct ItemsResult: Decodable {
     let items: [BaseItem]
     let totalRecordCount: Int?

@@ -471,26 +471,6 @@
         }
       }
     },
-    "Because You Liked “%@”": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Weil dir „%@“ gefällt"
-          }
-        }
-      }
-    },
-    "Because You Watched “%@”": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Weil du „%@“ angesehen hast"
-          }
-        }
-      }
-    },
     "Bitrate": {
       "localizations": {
         "de": {
@@ -657,6 +637,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Codec"
+          }
+        }
+      }
+    },
+    "Comedies to Unwind": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Komödien zum Abschalten"
           }
         }
       }
@@ -831,6 +821,16 @@
         }
       }
     },
+    "Cult Classics from the 90s": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kultfilme aus den 90ern"
+          }
+        }
+      }
+    },
     "Cult Series Everyone Knows": {
       "localizations": {
         "de": {
@@ -937,16 +937,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Direkt-Stream (umverpackt)"
-          }
-        }
-      }
-    },
-    "Directed by %@": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Von %@"
           }
         }
       }
@@ -1481,6 +1471,16 @@
         }
       }
     },
+    "Hidden Gems": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geheimtipps"
+          }
+        }
+      }
+    },
     "Hide Available": {
       "localizations": {
         "de": {
@@ -1651,6 +1651,26 @@
         }
       }
     },
+    "Mind-Bending Sci-Fi Movies": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sci-Fi-Filme, die den Kopf verdrehen"
+          }
+        }
+      }
+    },
+    "Miniseries for One Weekend": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Miniserien für ein Wochenende"
+          }
+        }
+      }
+    },
     "More Like This": {
       "localizations": {
         "de": {
@@ -1707,6 +1727,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Trailer stumm schalten"
+          }
+        }
+      }
+    },
+    "Mysterious Series": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rätselhafte Mystery-Serien"
           }
         }
       }
@@ -2471,6 +2501,16 @@
         }
       }
     },
+    "Romantic Movies": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Romantische Filme"
+          }
+        }
+      }
+    },
     "Sample Rate": {
       "localizations": {
         "de": {
@@ -2791,16 +2831,6 @@
         }
       }
     },
-    "Starring %@": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mit %@"
-          }
-        }
-      }
-    },
     "Storage": {
       "localizations": {
         "de": {
@@ -2897,6 +2927,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Untertitel verfügbar"
+          }
+        }
+      }
+    },
+    "Superhero Movies": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Superhelden-Filme"
           }
         }
       }
