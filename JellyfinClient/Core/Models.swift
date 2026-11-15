@@ -131,6 +131,7 @@ struct PlaybackInfoResponse: Decodable {
 struct BaseItem: Decodable, Identifiable, Hashable {
     let id: String
     let name: String?
+    var originalTitle: String? = nil
     let type: String?
     let collectionType: String?
     let isFolder: Bool?

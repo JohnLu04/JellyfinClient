@@ -1561,6 +1561,26 @@
         }
       }
     },
+    "Netflix Germany": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Netflix Deutschland"
+          }
+        }
+      }
+    },
+    "Netflix worldwide": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Netflix weltweit"
+          }
+        }
+      }
+    },
     "Netflix's Top 10 couldn't be loaded right now.": {
       "localizations": {
         "de": {
@@ -2817,6 +2837,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Zum Kaufen: %@"
+          }
+        }
+      }
+    },
+    "Top 10 Movies on Netflix": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Top 10 Filme auf Netflix"
+          }
+        }
+      }
+    },
+    "Top 10 Series on Netflix": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Top 10 Serien auf Netflix"
           }
         }
       }

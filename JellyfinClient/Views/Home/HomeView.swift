@@ -13,6 +13,7 @@ struct HomeView: View {
     @State private var errorMessage: String?
     @State private var hasLoaded = false
     @State private var playError: String?
+    @State private var top10: Top10List?
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -51,6 +52,13 @@ struct HomeView: View {
                         }
 
                         ForEach(latestRows, id: \.library.id) { row in
+                            // Netflix's Top 10 right above the first movie and the first TV library.
+                            if let top10, row.library.id == firstLatestRowID(of: "movies") {
+                                top10Row(top10, isSeries: false)
+                            }
+                            if let top10, row.library.id == firstLatestRowID(of: "tvshows") {
+                                top10Row(top10, isSeries: true)
+                            }
                             self.row("Recently Added in \(row.library.name ?? "")") {
                                 ForEach(row.items) { item in
                                     NavigationLink(value: item) { PosterCard(item: item).frame(width: 118) }
@@ -94,6 +102,7 @@ struct HomeView: View {
             }
             .toolbar(.hidden, for: .navigationBar)
             .itemNavigationDestinations()
+            .navigationDestination(for: DiscoverItem.self) { SeerrTitleDetailView(item: $0) }
             .refreshable { await load() }
             .task { if !hasLoaded { await load() } }
             .onReceive(NotificationCenter.default.publisher(for: .playbackDidStop)) { _ in
@@ -112,6 +121,16 @@ struct HomeView: View {
     }
 
     // MARK: - Rows
+
+    private func firstLatestRowID(of collectionType: String) -> String? {
+        latestRows.first { $0.library.collectionType == collectionType }?.library.id
+    }
+
+    private func top10Row(_ list: Top10List, isSeries: Bool) -> some View {
+        HomeTop10Row(list: list, isSeries: isSeries, api: app.api,
+                     onOpenItem: { path.append($0) },
+                     onOpenSeerr: { path.append($0) })
+    }
 
     private func row<Content: View>(_ title: LocalizedStringKey, subtitle: LocalizedStringKey? = nil,
                                     @ViewBuilder content: () -> Content) -> some View {
@@ -164,6 +183,8 @@ struct HomeView: View {
 
     private func load() async {
         guard let api = app.api else { return }
+        // Netflix's list comes from netflix.com; never let it hold up the library rows.
+        Task { if let list = try? await NetflixTop10.load() { top10 = list } }
         do {
             async let viewsRequest = api.userViews()
             async let resumeRequest = api.resumeItems()

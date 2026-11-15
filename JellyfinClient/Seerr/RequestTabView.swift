@@ -614,50 +614,75 @@ private struct NetflixTop10Section: View {
         region == NetflixTop10.countryName ? String(localized: "Germany") : String(localized: "Global")
     }
 
-    private static func key(_ entry: Top10Entry) -> String {
-        "\(entry.isSeries ? "tv" : "movie")-\(entry.searchTitle.lowercased())"
-    }
+    private static func key(_ entry: Top10Entry) -> String { NetflixTop10.matchKey(entry) }
 
     /// Finds each title in Seerr once (Lupin Part 1–4 share one search).
     private func matchTitles() async {
         guard let list, let service = seerr.client else { return }
+        matches = await NetflixTop10.seerrMatches(for: list.series + list.movies, service: service)
+    }
+}
+
+extension NetflixTop10 {
+    /// One key per title and type: "Lupin Part 1–4" entries share one lookup.
+    static func matchKey(_ entry: Top10Entry) -> String {
+        "\(entry.isSeries ? "tv" : "movie")-\(entry.searchTitle.lowercased())"
+    }
+
+    /// Looks each title up in Seerr, in parallel, keyed by `matchKey`.
+    static func seerrMatches(for entries: [Top10Entry], service: SeerrClient) async -> [String: DiscoverItem] {
         var unique: [String: Top10Entry] = [:]
-        for entry in list.series + list.movies where unique[Self.key(entry)] == nil { unique[Self.key(entry)] = entry }
+        for entry in entries where unique[matchKey(entry)] == nil { unique[matchKey(entry)] = entry }
+        var matches: [String: DiscoverItem] = [:]
         await withTaskGroup(of: (String, DiscoverItem?).self) { group in
             for (key, entry) in unique {
                 group.addTask {
                     let results = (try? await service.search(entry.searchTitle)) ?? []
-                    return (key, Self.bestMatch(for: entry, in: results))
+                    return (key, bestMatch(for: entry, in: results))
                 }
             }
             for await (key, item) in group {
                 if let item { matches[key] = item }
             }
         }
+        return matches
     }
 
     /// Same type; exact title preferred, then the closest year, then Seerr's own order.
-    nonisolated private static func bestMatch(for entry: Top10Entry, in results: [DiscoverItem]) -> DiscoverItem? {
+    nonisolated static func bestMatch(for entry: Top10Entry, in results: [DiscoverItem]) -> DiscoverItem? {
         let type: SeerrMediaType = entry.isSeries ? .tv : .movie
         let candidates = results.filter { $0.mediaType == type }
-        func normalized(_ text: String) -> String {
-            text.lowercased().folding(options: [.diacriticInsensitive], locale: nil)
-                .filter { $0.isLetter || $0.isNumber }
-        }
-        let wanted = normalized(entry.searchTitle)
-        let exact = candidates.filter { normalized($0.title) == wanted }
+        let wanted = normalizedTitle(entry.searchTitle)
+        let exact = candidates.filter { normalizedTitle($0.title) == wanted }
         let pool = exact.isEmpty ? candidates : exact
         if !entry.isSeries, let year = entry.year {
             if let byYear = pool.first(where: { Int($0.year ?? "").map { abs($0 - year) <= 1 } ?? false }) { return byYear }
         }
         return pool.first
     }
+
+    /// Lowercased letters and digits only, accents removed ("Squid Game: The Challenge" → "squidgamethechallenge").
+    nonisolated static func normalizedTitle(_ text: String) -> String {
+        text.lowercased().folding(options: [.diacriticInsensitive], locale: nil)
+            .filter { $0.isLetter || $0.isNumber }
+    }
 }
 
 /// Big rank number next to the poster, like Netflix's own Top 10 row.
-private struct Top10Card: View {
+struct Top10Card: View {
     let entry: Top10Entry
-    let item: DiscoverItem?
+    let posterURL: URL?
+    let badge: SeerrState?
+
+    init(entry: Top10Entry, item: DiscoverItem?) {
+        self.init(entry: entry, posterURL: item?.posterURL, badge: item?.state)
+    }
+
+    init(entry: Top10Entry, posterURL: URL?, badge: SeerrState?) {
+        self.entry = entry
+        self.posterURL = posterURL
+        self.badge = badge
+    }
 
     /// Netflix labels are English ("Season 2", "Parts 1–4", "Limited Series"); show them in the app's language.
     static func localizedSeasonLabel(_ label: String) -> String {
@@ -688,10 +713,10 @@ private struct Top10Card: View {
                 .minimumScaleFactor(0.6)
                 .frame(width: entry.rank == 10 ? 76 : 42, alignment: .trailing)
                 .padding(.bottom, 52)
-            SeerrPosterCard(url: item?.posterURL, title: entry.searchTitle,
+            SeerrPosterCard(url: posterURL, title: entry.searchTitle,
                        kind: entry.isSeries ? .series : .movie,
                        chip: entry.seasonLabel.map(Self.localizedSeasonLabel) ?? (entry.isSeries ? SeerrMediaType.tv.label : SeerrMediaType.movie.label),
-                       badge: item?.state)
+                       badge: badge)
                 .frame(width: 104)
         }
         .accessibilityElement(children: .combine)

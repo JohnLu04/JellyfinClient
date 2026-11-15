@@ -199,7 +199,7 @@ struct JellyfinAPI {
         let result: ItemsResult = try await get("Items", [
             "userId": userId, "searchTerm": term, "recursive": "true",
             "includeItemTypes": "Movie,Series", "limit": String(limit),
-            "fields": Self.listFields + ",ProviderIds", "enableTotalRecordCount": "false",
+            "fields": Self.listFields + ",ProviderIds,OriginalTitle", "enableTotalRecordCount": "false",
         ])
         return result.items
     }
