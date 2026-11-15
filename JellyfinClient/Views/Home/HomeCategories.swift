@@ -167,7 +167,9 @@ struct HomeCategoriesSection: View {
     }
 
     var body: some View {
-        LazyVStack(alignment: .leading, spacing: 30) {
+        // No stack spacing: each visible row adds the gap below itself, so rows that load or stay empty
+        // never leave extra space.
+        LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(rows) { row in
                 switch row {
                 case .library(_, let title, let items):
@@ -177,6 +179,7 @@ struct HomeCategoriesSection: View {
                                 .buttonStyle(.plain)
                         }
                     }
+                    .padding(.bottom, HomeLayout.rowSpacing)
                 case .seerr(let category):
                     HomeSeerrCategoryRow(category: category, onOpen: open)
                 }
@@ -227,16 +230,26 @@ private struct HomeSeerrCategoryRow: View {
 
     var body: some View {
         Group {
-            if let items, items.count >= 5 {
-                HomeRowContainer(title: category.title) {
-                    ForEach(items) { item in
-                        Button { onOpen(item) } label: { HomeDiscoverCard(item: item) }
-                            .buttonStyle(.plain)
+            if let items {
+                if items.count >= 5 {
+                    HomeRowContainer(title: category.title) {
+                        ForEach(items) { item in
+                            Button { onOpen(item) } label: { HomeDiscoverCard(item: item) }
+                                .buttonStyle(.plain)
+                        }
                     }
+                    .padding(.bottom, HomeLayout.rowSpacing)
+                } else {
+                    Color.clear.frame(height: 0)    // nothing worth showing: takes no space at all
                 }
             } else {
-                // Keeps the lazy stack loading rows as you scroll, without leaving gaps.
-                Color.clear.frame(height: items == nil ? 1 : 0)
+                // While loading: a placeholder of the final size, so nothing jumps when it arrives.
+                HomeRowContainer(title: category.title) {
+                    ForEach(0..<4, id: \.self) { _ in HomeDiscoverCard.placeholder }
+                }
+                .redacted(reason: .placeholder)
+                .allowsHitTesting(false)
+                .padding(.bottom, HomeLayout.rowSpacing)
             }
         }
         .task {
@@ -274,9 +287,26 @@ struct HomeRowContainer<Content: View>: View {
     }
 }
 
+/// Spacing shared by all Home sections.
+enum HomeLayout {
+    static let rowSpacing: CGFloat = 24
+}
+
 /// Poster and title of a TMDB title; a green dot when it's in the library.
 private struct HomeDiscoverCard: View {
     let item: DiscoverItem
+
+    /// Same size as a loaded card, for rows that are still loading.
+    static var placeholder: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.secondary.opacity(0.18))
+                .aspectRatio(2 / 3, contentMode: .fit)
+            Text(verbatim: "Placeholder title").font(.subheadline.weight(.semibold)).lineLimit(1)
+            Text(verbatim: "2000").font(.caption)
+        }
+        .frame(width: 118)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {

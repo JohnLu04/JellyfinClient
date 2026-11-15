@@ -19,7 +19,7 @@ struct HomeView: View {
         NavigationStack(path: $path) {
             GeometryReader { geo in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 30) {
+                    VStack(alignment: .leading, spacing: HomeLayout.rowSpacing) {
                         if !hero.isEmpty {
                             HeroCarousel(title: "Home", entries: hero, topInset: geo.safeAreaInsets.top,
                                          favorites: favorites,
