@@ -58,6 +58,7 @@ final class PlaybackCoordinator {
         if old.playMethod != .directPlay, let id = old.playSessionId {
             enqueue { try? await old.api.stopTranscoding(playSessionId: id) }
         }
+        old.adaptive?.stop()
         session = new
         report(.progress)
         return new
@@ -74,6 +75,7 @@ final class PlaybackCoordinator {
             enqueue { try? await api.stopTranscoding(playSessionId: id) }
         }
         engine.teardown()
+        session?.adaptive?.stop()
         self.engine = nil
         session = nil
         didReportStart = false

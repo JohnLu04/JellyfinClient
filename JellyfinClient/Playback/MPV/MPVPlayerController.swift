@@ -69,6 +69,8 @@ final class MPVPlayerController: PlaybackEngine {
     @ObservationIgnored private let embeddedAudioTitle: String?
     @ObservationIgnored private var didAddOfflineTracks = false
     @ObservationIgnored private var lifecycleObservers: [NSObjectProtocol] = []
+    /// Automatic quality: tells the adaptive stream how much is buffered, every second.
+    @ObservationIgnored private var bufferReporter: Task<Void, Never>?
 
     init(title: String, url: URL, startSeconds: Double, session: PlaybackSession?,
          offlineTracks: [PlaybackCoordinator.OfflineTrack] = [], embeddedAudioTitle: String? = nil) {
@@ -107,6 +109,14 @@ final class MPVPlayerController: PlaybackEngine {
         }
         observeLifecycle()
         load(url, from: startSeconds)
+        bufferReporter = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, let adaptive = self.session?.adaptive else { continue }
+                let seconds = self.core?.getString("demuxer-cache-duration").flatMap(Double.init) ?? 0
+                adaptive.updateBuffer(seconds)
+            }
+        }
     }
 
     /// Display aspect ratio of the video. mpv renders into a surface of exactly this shape, so the
@@ -173,6 +183,8 @@ final class MPVPlayerController: PlaybackEngine {
     var isPausedNow: Bool { isPaused }
 
     func teardown() {
+        bufferReporter?.cancel()
+        bufferReporter = nil
         lifecycleObservers.forEach(NotificationCenter.default.removeObserver)
         lifecycleObservers = []
         core?.onEvent = nil
@@ -199,6 +211,9 @@ final class MPVPlayerController: PlaybackEngine {
                 onStateChange?()
             case let ("paused-for-cache", .flag(buffering)):
                 isBuffering = buffering
+                if buffering, let adaptive = session?.adaptive {
+                    abrLog.error("Playback waiting for data at \(adaptive.status.rungMbit) Mbit/s")
+                }
             case ("track-list/count", _):
                 if session == nil { refreshLocalTracks() }
             case let ("aid", .string(value)):

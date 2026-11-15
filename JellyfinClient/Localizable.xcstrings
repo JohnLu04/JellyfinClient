@@ -441,6 +441,16 @@
         }
       }
     },
+    "Automatic": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Automatisch"
+          }
+        }
+      }
+    },
     "Autoplay Trailers": {
       "localizations": {
         "de": {
@@ -887,6 +897,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aktuelle Bitrate"
+          }
+        }
+      }
+    },
+    "Current Quality": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktuelle Qualität"
           }
         }
       }
@@ -1431,6 +1451,16 @@
         }
       }
     },
+    "Follows your Wi-Fi or mobile connection: the quality steps down before the buffer runs out and back up when there's room, without the video reloading.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Richtet sich nach deinem WLAN oder Mobilfunk: Die Qualität sinkt, bevor der Puffer leer ist, und steigt wieder, wenn genug Luft ist – ohne dass das Video neu lädt."
+          }
+        }
+      }
+    },
     "For Fun Nights with Friends": {
       "localizations": {
         "de": {
@@ -1507,6 +1537,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Packende Thriller"
+          }
+        }
+      }
+    },
+    "HLS (adaptive)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HLS (adaptiv)"
           }
         }
       }
@@ -1671,6 +1711,16 @@
         }
       }
     },
+    "Limit": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Begrenzt"
+          }
+        }
+      }
+    },
     "Limit bitrate (transcode)": {
       "localizations": {
         "de": {
@@ -1727,6 +1777,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "May the 4th: Abenteuer im Weltall"
+          }
+        }
+      }
+    },
+    "Measured Connection": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gemessene Verbindung"
           }
         }
       }
@@ -2407,6 +2467,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "In Bearbeitung"
+          }
+        }
+      }
+    },
+    "Quality": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qualität"
+          }
+        }
+      }
+    },
+    "Quality Changes": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qualitätswechsel"
           }
         }
       }

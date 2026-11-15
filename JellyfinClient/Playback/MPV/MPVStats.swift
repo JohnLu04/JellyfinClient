@@ -31,11 +31,22 @@ extension MPVPlayerController {
         if let session, session.playMethod != .directPlay {
             stream.append(row("Bitrate Limit", Bitrate.label(session.maxMbit)))
         }
+        if let adaptive = session?.adaptive {
+            let status = adaptive.status
+            stream.append(row("Current Quality", "\(status.rungMbit.formatted(.number.precision(.fractionLength(1)))) Mbit/s"))
+            if let estimate = status.estimateBps {
+                stream.append(row("Measured Connection", Self.bitrate(estimate)))
+            }
+            stream.append(row("Quality Changes", String(status.switches)))
+        }
         // ffmpeg names format families ("mov,mp4,m4a,3gp,3g2,mj2"); the server knows the actual container.
-        if let container = session?.source.container ?? text("file-format")?.split(separator: ",").first.map(String.init) {
+        if session?.adaptive != nil {
+            stream.append(row("Container", String(localized: "HLS (adaptive)")))
+        } else if let container = session?.source.container ?? text("file-format")?.split(separator: ",").first.map(String.init) {
             stream.append(row("Container", container.uppercased()))
         }
-        let fileSize = number("file-size")
+        // With automatic quality mpv only sees the playlist; size and bitrate come from the original.
+        let fileSize = session?.adaptive == nil ? number("file-size") : nil
         if let fileSize, fileSize > 0 {
             stream.append(row("File Size", Self.bytes(fileSize)))
         } else if let size = session?.source.size, size > 0 {

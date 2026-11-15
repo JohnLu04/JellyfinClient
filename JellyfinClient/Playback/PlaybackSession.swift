@@ -18,6 +18,8 @@ struct PlaybackSession {
     let maxMbit: Double
     let player: PlayerKind
     var selection: TrackSelection
+    /// "Automatic" quality: the local stream that switches between bitrates (nil for fixed quality).
+    var adaptive: AdaptiveStream? = nil
 
     private var streams: [MediaStream] {
         source.mediaStreams ?? item.primaryMediaSource?.mediaStreams ?? []
@@ -50,10 +52,26 @@ enum PlaybackResolver {
     /// - Otherwise the file is directly playable → static stream of the original file.
     static func resolve(item: BaseItem, api: JellyfinAPI, maxMbit: Double,
                         selection: TrackSelection, player: PlayerKind) async throws -> PlaybackSession {
-        let info = try await api.playbackInfo(itemId: item.id, maxBitrate: Bitrate.bps(forMbit: maxMbit), player: player,
+        // Automatic: ask for a low bitrate so the server answers with a transcoding URL; it is the
+        // template for the quality ladder (each rung sets its own bitrate).
+        let automatic = Bitrate.isAutomatic(maxMbit)
+        let requestedBps = automatic ? 1_000_000 : Bitrate.bps(forMbit: maxMbit)
+        let info = try await api.playbackInfo(itemId: item.id, maxBitrate: requestedBps, player: player,
                                               mediaSourceId: item.primaryMediaSource?.id, selection: selection)
         if let code = info.errorCode { throw APIError.playback(code: code) }
         guard let source = info.mediaSources?.first else { throw APIError.noPlayableSource }
+
+        if automatic, let transcodingPath = source.transcodingUrl,
+           let resolved = api.absoluteURL(serverRelative: transcodingPath),
+           (source.bitrate ?? .max) > 1_500_000 {
+            let (stream, url) = try await AdaptiveStream.start(api: api, template: api.withToken(resolved),
+                                                               source: source, forMPV: player == .mpv)
+            var session = PlaybackSession(api: api, item: item, source: source, playSessionId: info.playSessionId,
+                                          playMethod: .transcode, url: url, maxMbit: maxMbit, player: player,
+                                          selection: selection)
+            session.adaptive = stream
+            return session
+        }
 
         let url: URL
         let method: PlayMethod

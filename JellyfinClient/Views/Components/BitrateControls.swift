@@ -31,16 +31,38 @@ struct BitrateStepper: View {
     }
 }
 
-/// Streaming quality: "Original" (no limit) or a limit in 0.5 Mbit/s steps. `mbit == 0` means Original.
+/// Streaming quality: "Original" (no limit), "Automatic" (follows the connection) or a fixed limit in
+/// 0.5 Mbit/s steps. `mbit == 0` means Original, `Bitrate.automatic` (negative) means Automatic.
 struct StreamingQualityControl: View {
     @Binding var mbit: Double
     @State private var lastLimit = 8.0
 
+    private enum Mode: Hashable { case original, automatic, limit }
+
+    private var mode: Binding<Mode> {
+        Binding(
+            get: { Bitrate.isAutomatic(mbit) ? .automatic : (mbit > 0 ? .limit : .original) },
+            set: { mode in
+                switch mode {
+                case .original: mbit = 0
+                case .automatic: mbit = Bitrate.automatic
+                case .limit: mbit = lastLimit
+                }
+            })
+    }
+
     var body: some View {
-        Toggle("Limit bitrate (transcode)", isOn: Binding(
-            get: { mbit > 0 },
-            set: { mbit = $0 ? lastLimit : 0 }
-        ))
+        Picker("Quality", selection: mode) {
+            Text("Original").tag(Mode.original)
+            Text("Automatic").tag(Mode.automatic)
+            Text("Limit").tag(Mode.limit)
+        }
+        .pickerStyle(.segmented)
+        if Bitrate.isAutomatic(mbit) {
+            Text("Follows your Wi-Fi or mobile connection: the quality steps down before the buffer runs out and back up when there's room, without the video reloading.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
         if mbit > 0 {
             BitrateStepper(title: "Max. bitrate", mbit: Binding(
                 get: { mbit },

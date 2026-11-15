@@ -14,6 +14,7 @@ final class NativePlayerEngine: NSObject, PlaybackEngine, AVPlayerViewController
     private var statusObservation: NSKeyValueObservation?
     private var rateObservation: NSKeyValueObservation?
     private var didStart = false
+    private var steering: NativeABRSteering?
 
     init(url: URL, startSeconds: Double, session: PlaybackSession?) {
         let item = AVPlayerItem(url: url)
@@ -22,6 +23,10 @@ final class NativePlayerEngine: NSObject, PlaybackEngine, AVPlayerViewController
         self.session = session
         self.startSeconds = startSeconds
         super.init()
+        if let adaptive = session?.adaptive {
+            steering = NativeABRSteering(rungs: adaptive.rungs, item: item)
+            steering?.start()
+        }
     }
 
     func makeViewController() -> UIViewController {
@@ -46,6 +51,8 @@ final class NativePlayerEngine: NSObject, PlaybackEngine, AVPlayerViewController
     var isPausedNow: Bool { player.timeControlStatus == .paused }
 
     func teardown() {
+        steering?.stop()
+        steering = nil
         statusObservation = nil
         rateObservation = nil
         player.pause()

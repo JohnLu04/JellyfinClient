@@ -7,6 +7,10 @@ enum Bitrate {
     static let range: ClosedRange<Double> = 0.5...120
     /// Used when no limit is set; high enough that the server never transcodes for bitrate reasons.
     static let unlimitedBps = 200_000_000
+    /// Streaming setting value for "Automatic": the quality follows the connection (AdaptiveStream).
+    static let automatic: Double = -1
+
+    static func isAutomatic(_ mbit: Double) -> Bool { mbit < 0 }
 
     static func snap(_ mbit: Double) -> Double {
         min(range.upperBound, max(range.lowerBound, (mbit / step).rounded() * step))
@@ -17,6 +21,7 @@ enum Bitrate {
     }
 
     static func label(_ mbit: Double) -> String {
+        if isAutomatic(mbit) { return String(localized: "Automatic") }
         guard mbit > 0 else { return String(localized: "Original") }
         return mbit.formatted(.number.precision(.fractionLength(1))) + " Mbit/s"
     }
