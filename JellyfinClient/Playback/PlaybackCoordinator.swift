@@ -10,6 +10,8 @@ final class PlaybackCoordinator {
     private(set) var session: PlaybackSession?
     private var engine: PlaybackEngine?
     private weak var presentedController: UIViewController?
+    /// The player screen while Picture in Picture shows the video (dismissed, but kept for coming back).
+    private var parkedController: UIViewController?
     private var progressTask: Task<Void, Never>?
     private var didReportStart = false
     /// Server calls are chained so they arrive in order (Stopped always last).
@@ -24,8 +26,11 @@ final class PlaybackCoordinator {
                                                          selection: selection, player: player)
         stop()
         self.session = session
+        let subtitle = [item.seriesName, item.episodeLabel].compactMap { $0 }.joined(separator: " · ")
+        let metadata = NowPlayingController.Metadata(title: item.name ?? "", subtitle: subtitle.isEmpty ? nil : subtitle,
+                                                     artworkURL: api.seriesOrItemPosterURL(for: item, maxWidth: 600))
         present(player: player, url: session.url, title: item.name ?? "",
-                startSeconds: Ticks.seconds(startTicks), session: session)
+                startSeconds: Ticks.seconds(startTicks), session: session, metadata: metadata)
     }
 
     /// Plays with the default streaming quality and the server's default audio/subtitle tracks.
@@ -44,9 +49,11 @@ final class PlaybackCoordinator {
         let language: String?
     }
 
-    func playLocal(fileURL: URL, title: String, tracks: [OfflineTrack] = [], embeddedAudioTitle: String? = nil) {
+    func playLocal(fileURL: URL, title: String, subtitle: String? = nil, posterURL: URL? = nil,
+                   tracks: [OfflineTrack] = [], embeddedAudioTitle: String? = nil) {
         stop()
         present(player: PlayerKind.current, url: fileURL, title: title, startSeconds: 0, session: nil,
+                metadata: .init(title: title, subtitle: subtitle, artworkURL: posterURL),
                 offlineTracks: tracks, embeddedAudioTitle: embeddedAudioTitle)
     }
 
@@ -75,10 +82,12 @@ final class PlaybackCoordinator {
             enqueue { try? await api.stopTranscoding(playSessionId: id) }
         }
         engine.teardown()
+        NowPlayingController.shared.end()
         session?.adaptive?.stop()
         self.engine = nil
         session = nil
         didReportStart = false
+        parkedController = nil
 
         if let controller = presentedController, controller.presentingViewController != nil, !controller.isBeingDismissed {
             controller.dismiss(animated: true)
@@ -95,6 +104,7 @@ final class PlaybackCoordinator {
     // MARK: - Presentation
 
     private func present(player: PlayerKind, url: URL, title: String, startSeconds: Double, session: PlaybackSession?,
+                         metadata: NowPlayingController.Metadata,
                          offlineTracks: [OfflineTrack] = [], embeddedAudioTitle: String? = nil) {
         NotificationCenter.default.post(name: .playbackWillStart, object: nil)
         let controller: UIViewController
@@ -102,8 +112,14 @@ final class PlaybackCoordinator {
         case .native:
             let native = NativePlayerEngine(url: url, startSeconds: startSeconds, session: session)
             native.onReady = { [weak self] in self?.engineDidStart() }
-            native.onStateChange = { [weak self] in self?.report(.progress) }
+            native.onStateChange = { [weak self] in
+                self?.report(.progress)
+                NowPlayingController.shared.refresh()
+            }
             native.onDismiss = { [weak self] in self?.stop() }
+            native.onPiPRestore = { [weak self] controller, completion in
+                self?.presentAgain(controller, completion: completion) ?? completion(false)
+            }
             engine = native
             controller = native.makeViewController()
 
@@ -111,8 +127,18 @@ final class PlaybackCoordinator {
             let mpv = MPVPlayerController(title: title, url: url, startSeconds: startSeconds, session: session,
                                           offlineTracks: offlineTracks, embeddedAudioTitle: embeddedAudioTitle)
             mpv.onReady = { [weak self] in self?.engineDidStart() }
-            mpv.onStateChange = { [weak self] in self?.report(.progress) }
+            mpv.onStateChange = { [weak self] in
+                self?.report(.progress)
+                NowPlayingController.shared.refresh()
+            }
             mpv.onFinished = { [weak self] in self?.stop() }
+            mpv.onPiPStarted = { [weak self] in self?.parkPlayer() }
+            mpv.onPiPRestore = { [weak self] completion in
+                guard let self, let parked = self.parkedController else { return completion(true) }
+                self.parkedController = nil
+                self.presentAgain(parked, completion: completion)
+            }
+            mpv.onPiPClosed = { [weak self] in self?.stop() }
             mpv.onSelectionChange = { [weak self] selection in
                 self?.session?.selection = selection
                 self?.report(.progress)
@@ -129,6 +155,23 @@ final class PlaybackCoordinator {
         }
         presentedController = controller
         topViewController()?.present(controller, animated: true)
+        if let engine { NowPlayingController.shared.begin(engine: engine, metadata: metadata) }
+    }
+
+    // MARK: - Picture in Picture
+
+    /// Picture in Picture shows the video: close the player screen (playback goes on) so the app can be used.
+    private func parkPlayer() {
+        guard let controller = presentedController, controller.presentingViewController != nil else { return }
+        parkedController = controller
+        controller.dismiss(animated: true)
+    }
+
+    /// Back from Picture in Picture: show the player screen again.
+    private func presentAgain(_ controller: UIViewController, completion: @escaping (Bool) -> Void) {
+        guard controller.presentingViewController == nil, let top = topViewController() else { return completion(true) }
+        presentedController = controller
+        top.present(controller, animated: true) { completion(true) }
     }
 
     private func engineDidStart() {

@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 import UIKit
 
@@ -104,7 +105,12 @@ struct MPVPlayerView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { toggleControls() }
 
-            if (controller.isBuffering || controller.isSwitching) && controller.errorMessage == nil {
+            // Apple's player during the hand-over to Picture in Picture (transparent otherwise).
+            PiPLayerView(layer: controller.pictureInPicture.playerLayer)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+
+            if (controller.isBuffering || controller.isSwitching || controller.pipState == .preparing) && controller.errorMessage == nil {
                 ProgressView()
                     .controlSize(.large)
                     .tint(.white)
@@ -134,6 +140,14 @@ struct MPVPlayerView: View {
         .preferredColorScheme(.dark)
         .onAppear { scheduleHide() }
         .onChange(of: controller.isPaused) { scheduleHide() }
+        .alert("Picture in Picture", isPresented: Binding(
+            get: { controller.pipMessage != nil },
+            set: { if !$0 { controller.pipMessage = nil } })
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(controller.pipMessage ?? "")
+        }
     }
 
     // MARK: - Controls
@@ -146,6 +160,9 @@ struct MPVPlayerView: View {
                     .font(.headline)
                     .lineLimit(1)
                 Spacer()
+                if MPVPictureInPicture.isSupported {
+                    pipButton
+                }
                 statsButton
                 tracksButton
             }
@@ -196,6 +213,22 @@ struct MPVPlayerView: View {
         }
         .accessibilityLabel("Audio & Subtitles")
         .disabled((controller.audioOptions.isEmpty && controller.subtitleOptions.isEmpty) || controller.isSwitching)
+    }
+
+    /// Hands the video to Picture in Picture.
+    private var pipButton: some View {
+        Button {
+            hideTask?.cancel()
+            controller.startPictureInPicture()
+        } label: {
+            Image(systemName: "pip.enter")
+                .font(.title3.weight(.semibold))
+                .frame(width: 48, height: 48)
+                .background(.ultraThinMaterial, in: Circle())
+                .contentShape(Circle())
+        }
+        .accessibilityLabel("Picture in Picture")
+        .disabled(controller.pipState != .idle || controller.isSwitching || controller.duration <= 0)
     }
 
     /// Opens the live "Video Details" panel (bitrate, buffer, file size, codecs …).
@@ -505,6 +538,34 @@ struct MPVStatsPanel: View {
                 sections = controller.readStats()
                 try? await Task.sleep(for: .seconds(1))
             }
+        }
+    }
+}
+
+/// Holds the AVPlayerLayer used for the Picture in Picture hand-over, sized to the screen.
+struct PiPLayerView: UIViewRepresentable {
+    let layer: AVPlayerLayer
+
+    func makeUIView(context: Context) -> LayerView {
+        let view = LayerView()
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .clear
+        view.playerLayer = layer
+        view.layer.addSublayer(layer)
+        return view
+    }
+
+    func updateUIView(_ uiView: LayerView, context: Context) {}
+
+    final class LayerView: UIView {
+        var playerLayer: AVPlayerLayer?
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            playerLayer?.frame = bounds
+            CATransaction.commit()
         }
     }
 }

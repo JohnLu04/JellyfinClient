@@ -48,6 +48,11 @@ final class MPVPlayerController: PlaybackEngine {
     private(set) var subtitleOptions: [TrackOption] = []
     private(set) var selectedAudio: Int?
     private(set) var selectedSubtitle: Int?
+    /// Picture in Picture: idle, preparing (Apple's player loads) or active.
+    enum PiPState { case idle, preparing, active }
+    private(set) var pipState: PiPState = .idle
+    /// Why Picture in Picture didn't start, shown briefly.
+    var pipMessage: String?
 
     @ObservationIgnored var onReady: (() -> Void)?
     @ObservationIgnored var onStateChange: (() -> Void)?
@@ -55,6 +60,14 @@ final class MPVPlayerController: PlaybackEngine {
     /// Track changes made in the player, so progress reports carry the current audio/subtitle.
     @ObservationIgnored var onSelectionChange: ((TrackSelection) -> Void)?
     @ObservationIgnored var reloader: ((TrackSelection) async throws -> PlaybackSession)?
+    /// Picture in Picture is up (hide the player screen) / should come back (show it, then call the handler) /
+    /// was closed (stop playback).
+    @ObservationIgnored var onPiPStarted: (() -> Void)?
+    @ObservationIgnored var onPiPRestore: ((@escaping (Bool) -> Void) -> Void)?
+    @ObservationIgnored var onPiPClosed: (() -> Void)?
+    @ObservationIgnored let pictureInPicture = MPVPictureInPicture()
+    /// The stream prepared for Apple's player during Picture in Picture; stopped afterwards.
+    @ObservationIgnored private var pipSession: PlaybackSession?
 
     @ObservationIgnored let layer = MPVMetalLayer()
     @ObservationIgnored private var core: MPVCore?
@@ -130,15 +143,97 @@ final class MPVPlayerController: PlaybackEngine {
 
     // MARK: - Controls
 
-    func togglePause() { core?.setFlag("pause", !isPaused) }
+    func togglePause() {
+        if pictureInPicture.isRunning {
+            pictureInPicture.isPaused ? pictureInPicture.play() : pictureInPicture.pause()
+            return
+        }
+        core?.setFlag("pause", !isPaused)
+    }
+
+    func play() {
+        if pictureInPicture.isRunning { pictureInPicture.play() } else { core?.setFlag("pause", false) }
+    }
+
+    func pause() {
+        if pictureInPicture.isRunning { pictureInPicture.pause() } else { core?.setFlag("pause", true) }
+    }
 
     func seek(to seconds: Double) {
+        if pictureInPicture.isRunning { pictureInPicture.seek(to: seconds); return }
         position = seconds
         core?.command(["seek", String(format: "%.3f", seconds), "absolute"])
     }
 
     func skip(by seconds: Double) {
+        if pictureInPicture.isRunning {
+            pictureInPicture.seek(to: (pictureInPicture.currentSeconds ?? position) + seconds)
+            return
+        }
         core?.command(["seek", String(format: "%.3f", seconds), "relative"])
+    }
+
+    // MARK: - Picture in Picture
+
+    /// Hands playback to Apple's player and starts Picture in Picture (see MPVPictureInPicture).
+    func startPictureInPicture() {
+        guard pipState == .idle, MPVPictureInPicture.isSupported, errorMessage == nil else { return }
+        pipState = .preparing
+        let pip = pictureInPicture
+        pip.onStarted = { [weak self] in
+            guard let self else { return }
+            self.pipState = .active
+            self.onPiPStarted?()
+        }
+        pip.onRestore = { [weak self] completion in
+            guard let self, let onPiPRestore = self.onPiPRestore else { return completion(true) }
+            onPiPRestore(completion)
+        }
+        pip.onFailed = { [weak self] message in self?.pipMessage = message }
+        pip.onEnded = { [weak self] seconds, paused, restored in self?.pictureInPictureEnded(at: seconds, paused: paused, restored: restored) }
+        let wasPaused = isPaused
+        Task {
+            var url = self.url
+            if let session {
+                // A stream for Apple's player (mpv's may be a format it can't play).
+                do {
+                    let native = try await PlaybackResolver.resolve(item: session.item, api: session.api, maxMbit: session.maxMbit,
+                                                                    selection: session.selection, player: .native)
+                    pipSession = native
+                    url = native.url
+                } catch {
+                    pipState = .idle
+                    pipMessage = String(localized: "Picture in Picture couldn't start.")
+                    return
+                }
+            }
+            pip.start(url: url, at: position) { [weak self] in
+                guard let self else { return }
+                self.core?.setFlag("pause", true)
+                if wasPaused { pip.pause() }
+            }
+        }
+    }
+
+    private func pictureInPictureEnded(at seconds: Double, paused: Bool?, restored: Bool) {
+        pipState = .idle
+        if let native = pipSession {
+            pipSession = nil
+            native.adaptive?.stop()
+            if native.playMethod != .directPlay, let id = native.playSessionId {
+                Task { try? await native.api.stopTranscoding(playSessionId: id) }
+            }
+        }
+        guard let paused else { return }     // Apple's player never took over: mpv just goes on
+        position = seconds
+        core?.command(["seek", String(format: "%.3f", seconds), "absolute"])
+        guard restored else {
+            core?.setFlag("pause", true)
+            onPiPClosed?()
+            return
+        }
+        core?.setFlag("pause", paused)
+        onStateChange?()
     }
 
     func selectAudio(_ id: Int) {
@@ -182,10 +277,20 @@ final class MPVPlayerController: PlaybackEngine {
 
     // MARK: - PlaybackEngine
 
-    var currentSeconds: Double { position }
-    var isPausedNow: Bool { isPaused }
+    var currentSeconds: Double { pictureInPicture.currentSeconds ?? position }
+    var isPausedNow: Bool { pictureInPicture.isRunning ? pictureInPicture.isPaused : isPaused }
+    var durationSeconds: Double { duration > 0 ? duration : (pictureInPicture.durationSeconds ?? 0) }
 
     func teardown() {
+        pictureInPicture.onEnded = nil
+        pictureInPicture.stop()
+        if let native = pipSession {
+            pipSession = nil
+            native.adaptive?.stop()
+            if native.playMethod != .directPlay, let id = native.playSessionId {
+                Task { try? await native.api.stopTranscoding(playSessionId: id) }
+            }
+        }
         bufferReporter?.cancel()
         bufferReporter = nil
         lifecycleObservers.forEach(NotificationCenter.default.removeObserver)

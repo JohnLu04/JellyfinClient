@@ -267,7 +267,8 @@ final class DownloadManager: NSObject {
             PlaybackCoordinator.OfflineTrack(kind: file.extra.kind == .audio ? .audio : .subtitle, url: file.url,
                                              title: file.extra.title, language: file.extra.language)
         }
-        PlaybackCoordinator.shared.playLocal(fileURL: url, title: title ?? record.name, tracks: tracks,
+        PlaybackCoordinator.shared.playLocal(fileURL: url, title: title ?? record.name, subtitle: record.subtitle,
+                                             posterURL: posterURL(for: record), tracks: tracks,
                                              embeddedAudioTitle: record.mainAudioTitle)
     }
 

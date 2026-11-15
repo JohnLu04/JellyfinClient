@@ -7,6 +7,8 @@ final class NativePlayerEngine: NSObject, PlaybackEngine, AVPlayerViewController
     var onReady: (() -> Void)?
     var onStateChange: (() -> Void)?
     var onDismiss: (() -> Void)?
+    /// Picture in Picture wants the full player back: present `viewController` again, then call the handler.
+    var onPiPRestore: ((UIViewController, @escaping (Bool) -> Void) -> Void)?
 
     private let player: AVPlayer
     private let session: PlaybackSession?
@@ -15,6 +17,10 @@ final class NativePlayerEngine: NSObject, PlaybackEngine, AVPlayerViewController
     private var rateObservation: NSKeyValueObservation?
     private var didStart = false
     private var steering: NativeABRSteering?
+    /// Kept while playing: during Picture in Picture AVKit dismisses it and we present it again on return.
+    private var controller: AVPlayerViewController?
+    private var isInPictureInPicture = false
+    private var restoredFromPictureInPicture = false
 
     init(url: URL, startSeconds: Double, session: PlaybackSession?) {
         let item = AVPlayerItem(url: url)
@@ -34,7 +40,12 @@ final class NativePlayerEngine: NSObject, PlaybackEngine, AVPlayerViewController
         controller.player = player
         controller.delegate = self
         controller.allowsPictureInPicturePlayback = true
+        // Swiping home while the video plays goes to Picture in Picture.
+        controller.canStartPictureInPictureAutomaticallyFromInline = true
+        // The lock screen / Control Center player is filled by NowPlayingController (title, poster).
+        controller.updatesNowPlayingInfoCenter = false
         controller.modalPresentationStyle = .fullScreen
+        self.controller = controller
 
         statusObservation = player.currentItem?.observe(\.status, options: [.new]) { [weak self] item, _ in
             Task { @MainActor in self?.statusChanged(item) }
@@ -49,8 +60,22 @@ final class NativePlayerEngine: NSObject, PlaybackEngine, AVPlayerViewController
 
     var currentSeconds: Double { player.currentTime().seconds.isFinite ? player.currentTime().seconds : 0 }
     var isPausedNow: Bool { player.timeControlStatus == .paused }
+    var durationSeconds: Double {
+        let seconds = player.currentItem?.duration.seconds ?? 0
+        return seconds.isFinite ? seconds : 0
+    }
+
+    func play() { player.play() }
+    func pause() { player.pause() }
+
+    func seek(to seconds: Double) {
+        player.seek(to: CMTime(seconds: max(seconds, 0), preferredTimescale: 600))
+    }
+
+    func skip(by seconds: Double) { seek(to: currentSeconds + seconds) }
 
     func teardown() {
+        controller = nil
         steering?.stop()
         steering = nil
         statusObservation = nil
@@ -132,7 +157,39 @@ final class NativePlayerEngine: NSObject, PlaybackEngine, AVPlayerViewController
         MainActor.assumeIsolated {
             _ = coordinator.animate(alongsideTransition: nil) { [weak self] context in
                 guard !context.isCancelled else { return }
-                MainActor.assumeIsolated { self?.onDismiss?() }
+                MainActor.assumeIsolated {
+                    // AVKit closes the player screen when Picture in Picture starts: playback goes on.
+                    guard let self, !self.isInPictureInPicture else { return }
+                    self.onDismiss?()
+                }
+            }
+        }
+    }
+
+    // MARK: Picture in Picture
+
+    nonisolated func playerViewControllerWillStartPictureInPicture(_ playerViewController: AVPlayerViewController) {
+        MainActor.assumeIsolated {
+            isInPictureInPicture = true
+            restoredFromPictureInPicture = false
+        }
+    }
+
+    nonisolated func playerViewController(_ playerViewController: AVPlayerViewController,
+                                          restoreUserInterfaceForPictureInPictureStopWithCompletionHandler completionHandler: @escaping (Bool) -> Void) {
+        MainActor.assumeIsolated {
+            restoredFromPictureInPicture = true
+            guard playerViewController.presentingViewController == nil, let onPiPRestore else { return completionHandler(true) }
+            onPiPRestore(playerViewController, completionHandler)
+        }
+    }
+
+    nonisolated func playerViewControllerDidStopPictureInPicture(_ playerViewController: AVPlayerViewController) {
+        MainActor.assumeIsolated {
+            isInPictureInPicture = false
+            // Closed with ✕ instead of going back to the app's player: playback ends.
+            if !restoredFromPictureInPicture, playerViewController.presentingViewController == nil {
+                onDismiss?()
             }
         }
     }

@@ -43,6 +43,11 @@ struct PlaybackSession {
 protocol PlaybackEngine: AnyObject {
     var currentSeconds: Double { get }
     var isPausedNow: Bool { get }
+    var durationSeconds: Double { get }
+    func play()
+    func pause()
+    func seek(to seconds: Double)
+    func skip(by seconds: Double)
     func teardown()
 }
 

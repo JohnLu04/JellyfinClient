@@ -2331,6 +2331,36 @@
         }
       }
     },
+    "Picture in Picture": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bild-in-Bild"
+          }
+        }
+      }
+    },
+    "Picture in Picture couldn't start.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bild-in-Bild konnte nicht gestartet werden."
+          }
+        }
+      }
+    },
+    "Picture in Picture isn't available for this video.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bild-in-Bild ist für dieses Video nicht verfügbar."
+          }
+        }
+      }
+    },
     "Play": {
       "localizations": {
         "de": {
