@@ -220,7 +220,7 @@ struct AppTopActions: ViewModifier {
 
     @ViewBuilder
     private var activityDot: some View {
-        if downloads.records.contains(where: { $0.state == .downloading }) {
+        if downloads.hasActiveDownloads {
             Circle()
                 .fill(Color.accentColor)
                 .frame(width: 9, height: 9)

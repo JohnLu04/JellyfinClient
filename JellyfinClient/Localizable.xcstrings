@@ -481,6 +481,16 @@
         }
       }
     },
+    "Cancel Download": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download abbrechen"
+          }
+        }
+      }
+    },
     "Cast: ": {
       "localizations": {
         "de": {
@@ -507,6 +517,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Streamingdienste werden geprüft …"
+          }
+        }
+      }
+    },
+    "Choose Quality…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qualität wählen …"
           }
         }
       }
@@ -597,6 +617,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Mit Seerr %@ verbunden."
+          }
+        }
+      }
+    },
+    "Connection interrupted – retrying (%lld/%lld)": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbindung unterbrochen – neuer Versuch (%1$lld/%2$lld)"
           }
         }
       }
@@ -861,12 +891,52 @@
         }
       }
     },
+    "Download Complete": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download abgeschlossen"
+          }
+        }
+      }
+    },
+    "Download Failed": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download fehlgeschlagen"
+          }
+        }
+      }
+    },
     "Download Failed · Retry": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Download fehlgeschlagen · Erneut versuchen"
+          }
+        }
+      }
+    },
+    "Download Interrupted · Retrying": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download unterbrochen · neuer Versuch"
+          }
+        }
+      }
+    },
+    "Download Queued": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download in Warteschlange"
           }
         }
       }
@@ -891,12 +961,32 @@
         }
       }
     },
+    "Download failed.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download fehlgeschlagen."
+          }
+        }
+      }
+    },
     "Downloaded · Play Offline": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Heruntergeladen · Offline abspielen"
+          }
+        }
+      }
+    },
+    "Downloading": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wird geladen"
           }
         }
       }
@@ -1571,6 +1661,16 @@
         }
       }
     },
+    "Not signed in.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nicht angemeldet."
+          }
+        }
+      }
+    },
     "Not supported yet": {
       "localizations": {
         "de": {
@@ -2057,6 +2157,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Fortsetzen ab %@"
+          }
+        }
+      }
+    },
+    "Retry": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erneut versuchen"
           }
         }
       }
@@ -2807,6 +2917,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Wartet auf Daten"
+          }
+        }
+      }
+    },
+    "Waiting…": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wartet …"
           }
         }
       }

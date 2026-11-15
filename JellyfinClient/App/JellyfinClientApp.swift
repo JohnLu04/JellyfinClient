@@ -3,6 +3,7 @@ import SwiftUI
 
 @main
 struct JellyfinClientApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var appModel = AppModel()
     @State private var downloads = DownloadManager.shared
     @State private var seerr = SeerrStore.shared
@@ -19,6 +20,22 @@ struct JellyfinClientApp: App {
                 .environment(downloads)
                 .environment(seerr)
         }
+    }
+}
+
+/// Hands background-download wake-ups to the download manager.
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication,
+                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        _ = DownloadManager.shared      // reattach to transfers that kept running while the app was gone
+        return true
+    }
+
+    /// iOS relaunched or woke the app because downloads finished or need attention.
+    func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
+                     completionHandler: @escaping () -> Void) {
+        guard identifier == DownloadManager.sessionIdentifier else { return completionHandler() }
+        DownloadManager.shared.backgroundCompletionHandler = completionHandler
     }
 }
 

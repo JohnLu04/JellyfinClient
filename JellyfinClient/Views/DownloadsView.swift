@@ -9,8 +9,15 @@ struct DownloadsView: View {
             List {
                 ForEach(downloads.records) { record in
                     Button {
-                        if record.state == .completed, let url = downloads.fileURL(for: record) {
-                            PlaybackCoordinator.shared.playLocal(fileURL: url, title: record.name)
+                        switch record.state {
+                        case .completed:
+                            if let url = downloads.fileURL(for: record) {
+                                PlaybackCoordinator.shared.playLocal(fileURL: url, title: record.name)
+                            }
+                        case .failed:
+                            downloads.retry(id: record.id)
+                        case .queued, .downloading:
+                            break
                         }
                     } label: {
                         DownloadRow(record: record)
@@ -18,7 +25,13 @@ struct DownloadsView: View {
                     .buttonStyle(.plain)
                     .swipeActions {
                         Button(role: .destructive) { downloads.delete(id: record.id) } label: {
-                            Label(record.state == .downloading ? "Cancel" : "Delete", systemImage: "trash")
+                            Label(record.isActive ? "Cancel" : "Delete", systemImage: "trash")
+                        }
+                        if record.state == .failed {
+                            Button { downloads.retry(id: record.id) } label: {
+                                Label("Retry", systemImage: "arrow.clockwise")
+                            }
+                            .tint(.accentColor)
                         }
                     }
                 }
@@ -53,10 +66,15 @@ struct DownloadRow: View {
                 }
                 Text(record.name).font(.headline).lineLimit(2)
                 switch record.state {
+                case .queued:
+                    ProgressView(value: record.progress)
+                        .tint(.secondary)
+                    Text(record.errorMessage ?? String(localized: "Waiting…"))
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 case .downloading:
                     ProgressView(value: record.progress)
-                    Text("\(record.qualityLabel) · \(ByteCountFormatter.string(fromByteCount: record.bytesWritten, countStyle: .file))")
-                        .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                    Text(record.errorMessage ?? progressText)
+                        .font(.caption).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
                 case .completed:
                     Text("\(record.qualityLabel) · \(ByteCountFormatter.string(fromByteCount: record.bytesWritten, countStyle: .file))")
                         .font(.caption).foregroundStyle(.secondary)
@@ -69,6 +87,22 @@ struct DownloadRow: View {
             DownloadStateIcon(record: record).font(.title3)
         }
         .contentShape(Rectangle())
+    }
+
+    /// "4 Mbit/s · 1.2 GB of 2.3 GB · 8.4 MB/s"
+    private var progressText: String {
+        var parts = [record.qualityLabel]
+        let written = ByteCountFormatter.string(fromByteCount: record.bytesWritten, countStyle: .file)
+        if let expected = record.expectedBytes, expected > 0 {
+            let total = ByteCountFormatter.string(fromByteCount: expected, countStyle: .file)
+            parts.append(String(localized: "\(written) of \(total)"))
+        } else {
+            parts.append(written)
+        }
+        if let speed = downloads.speeds[record.id], speed > 0 {
+            parts.append("\(ByteCountFormatter.string(fromByteCount: Int64(speed), countStyle: .file))/s")
+        }
+        return parts.joined(separator: " · ")
     }
 
     @ViewBuilder
@@ -86,9 +120,10 @@ struct DownloadStateIcon: View {
 
     var body: some View {
         switch record.state {
+        case .queued: Image(systemName: "clock").foregroundStyle(.secondary)
         case .downloading: Image(systemName: "arrow.down.circle").foregroundStyle(.tint)
         case .completed: Image(systemName: "play.circle.fill").foregroundStyle(.tint)
-        case .failed: Image(systemName: "exclamationmark.circle").foregroundStyle(.red)
+        case .failed: Image(systemName: "arrow.clockwise.circle").foregroundStyle(.red)
         }
     }
 }

@@ -19,7 +19,7 @@ Native SwiftUI client for [Jellyfin](https://jellyfin.org) servers (10.9+). iOS 
 - **Audio & subtitle choice** on every title page (server defaults pre-selected), used by both players.
 - The server decides via `PlaybackInfo` (with a device profile per player): direct play when possible, otherwise HLS remux/transcode. Start/progress/stop (incl. selected tracks) are reported so resume positions sync.
 - **Transcoding in 0.5 Mbit/s steps** – "Original" or a limit from 0.5 to 120 Mbit/s (stepper + slider). Default in Settings, overridable per title. Resolution is capped automatically at low bitrates.
-- **Downloads** – original file or server-transcoded H.264/AAC MP4 at a chosen bitrate (0.5 steps), with progress, poster, size estimate and offline playback.
+- **Downloads** – original file or server-transcoded H.264/AAC MP4 at a chosen bitrate (0.5 steps), with progress, speed, poster, size estimate and offline playback. Built like Streamyfin's native downloader: transfers run in a background `URLSession` (they keep going when you leave the app, lock the screen or iOS ends the app, and iOS relaunches the app to file them), one at a time from a persisted queue, with automatic retries that resume where they stopped when the server allows it. On iOS 26 a continued-processing task keeps the queue moving in the background. A notification tells you when a download finishes or fails.
 
 ## Run
 
@@ -47,14 +47,14 @@ Unsigned IPAs for sideloading (AltStore, SideStore, Sideloadly) are attached to 
 | `Core/` | `JellyfinAPI` (REST client), models, device profile, bitrate helpers, Keychain storage |
 | `Playback/` | `PlaybackSession` (PlaybackInfo → stream URL), `PlaybackCoordinator` (presentation, reporting), `NativePlayerEngine` (AVPlayer) |
 | `Playback/MPV/` | `MPVCore` (libmpv wrapper, Metal/MoltenVK rendering), `MPVPlayerController` (state + track switching), `MPVPlayerView` (controls) |
-| `Downloads/` | `DownloadManager` – URLSession downloads + index in `Documents/Downloads` |
+| `Downloads/` | `DownloadManager` – background URLSession, queue, retries, index in `Documents/Downloads`; `DownloadKeepAlive` – iOS 26 continued-processing task |
 | `Views/` | SwiftUI screens and shared components |
 
 New Swift files dropped into `JellyfinClient/` are picked up by Xcode automatically (folder-synchronized group).
 
 ## Known limitations (next steps)
 
-- Downloads stop if the app is closed (no background `URLSession` yet); they're marked "Interrupted" and can be restarted.
+- Swiping the app away in the app switcher (force quit) pauses downloads until you open the app again; iOS doesn't let any app continue after that. They then resume automatically.
 - mpv has no Picture in Picture / AirPlay (use the Apple player for that); music, live TV and photo libraries are hidden.
 - The first build downloads MPVKit's prebuilt frameworks (~1 GB, cached afterwards).
 - Offline watch progress isn't synced back to the server.

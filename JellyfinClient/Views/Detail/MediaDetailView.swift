@@ -184,9 +184,11 @@ struct MediaDetailView: View {
                     if let record, let url = downloads.fileURL(for: record) {
                         PlaybackCoordinator.shared.playLocal(fileURL: url, title: target.name ?? record.name)
                     }
-                case .downloading?:
+                case .downloading?, .queued?:
                     break
-                default:
+                case .failed?:
+                    downloads.retry(id: target.id)
+                case nil:
                     downloadSheetItem = target
                 }
             } label: {
@@ -197,6 +199,9 @@ struct MediaDetailView: View {
                             .progressViewStyle(.circular)
                             .controlSize(.small)
                         Text("Downloading · \(Int((record?.progress ?? 0) * 100)) %")
+                    case .queued?:
+                        Image(systemName: "clock")
+                        Text((record?.retryCount ?? 0) > 0 ? String(localized: "Download Interrupted · Retrying") : String(localized: "Download Queued"))
                     case .completed?:
                         Image(systemName: "checkmark.circle.fill")
                         Text("Downloaded · Play Offline")
@@ -215,8 +220,13 @@ struct MediaDetailView: View {
                 .background(Color.secondary.opacity(0.25), in: RoundedRectangle(cornerRadius: 8))
             }
             .contextMenu {
-                if record != nil {
-                    Button("Delete Download", systemImage: "trash", role: .destructive) { downloads.delete(id: target.id) }
+                if record?.state == .failed {
+                    Button("Choose Quality…", systemImage: "slider.horizontal.3") { downloadSheetItem = target }
+                }
+                if let record {
+                    Button(record.isActive ? "Cancel Download" : "Delete Download", systemImage: "trash", role: .destructive) {
+                        downloads.delete(id: target.id)
+                    }
                 }
             }
         }
@@ -466,7 +476,9 @@ struct MediaDetailView: View {
         let record = downloads.record(for: episode.id)
         if record?.state == .completed, let record, let url = downloads.fileURL(for: record) {
             PlaybackCoordinator.shared.playLocal(fileURL: url, title: episode.name ?? record.name)
-        } else if record?.state != .downloading {
+        } else if record?.state == .failed {
+            downloads.retry(id: episode.id)
+        } else if record == nil {
             downloadSheetItem = episode
         }
     }
@@ -475,7 +487,7 @@ struct MediaDetailView: View {
         guard let api = app.api else { return }
         for episode in episodes {
             switch downloads.record(for: episode.id)?.state {
-            case .completed?, .downloading?: continue
+            case .completed?, .downloading?, .queued?: continue
             default: downloads.start(item: episode, api: api, mbit: mbit)
             }
         }
@@ -556,6 +568,8 @@ struct EpisodeCell: View {
             ProgressView(value: record?.progress ?? 0)
                 .progressViewStyle(.circular)
                 .controlSize(.small)
+        case .queued?:
+            Image(systemName: "clock").font(.title3).foregroundStyle(.secondary)
         case .completed?:
             Image(systemName: "checkmark.circle.fill").font(.title3).foregroundStyle(.tint)
         case .failed?:
