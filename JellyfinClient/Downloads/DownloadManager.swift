@@ -228,6 +228,7 @@ final class DownloadManager: NSObject {
         // Started from the foreground: the only moment iOS lets us ask to keep running afterwards.
         DownloadKeepAlive.begin(title: String(localized: "Downloading"), subtitle: item.name ?? "")
         pump()
+        DownloadActivityController.start()
     }
 
     /// Tries a failed download again, picking up where it stopped.
@@ -240,6 +241,7 @@ final class DownloadManager: NSObject {
         saveIndex()
         DownloadKeepAlive.begin(title: String(localized: "Downloading"), subtitle: records[index].name)
         pump()
+        DownloadActivityController.start()
     }
 
     /// Cancels a running or queued download or removes a finished one (all its files included).
@@ -256,6 +258,7 @@ final class DownloadManager: NSObject {
         records.remove(at: index)
         saveIndex()
         pump()
+        DownloadActivityController.refresh(force: true)
     }
 
     /// Plays a finished download with its extra audio tracks and subtitles.
@@ -302,6 +305,7 @@ final class DownloadManager: NSObject {
         saveIndex()
         isReconnected = true
         pump()
+        DownloadActivityController.appLaunched()
         if eventsDelivered { callBackgroundCompletion() }
     }
 
@@ -542,6 +546,7 @@ final class DownloadManager: NSObject {
             DownloadKeepAlive.begin(title: String(localized: "Downloading"), subtitle: record.name)
         }
         pump()
+        DownloadActivityController.start()
     }
 
     @objc private func protectedDataAvailable() {
@@ -823,6 +828,7 @@ final class DownloadManager: NSObject {
         DownloadDiagnostics.log("\(id): completed")
         DownloadNotifications.post(title: String(localized: "Download Complete"), body: records[index].name, id: id)
         pump()
+        DownloadActivityController.refresh(force: true)
     }
 
     /// An extra file the server can't deliver doesn't fail the whole download.
@@ -953,6 +959,7 @@ final class DownloadManager: NSObject {
         DownloadDiagnostics.log("\(id): failed – \(message)")
         DownloadNotifications.post(title: String(localized: "Download Failed"),
                                    body: "\(records[index].name) – \(message)", id: id)
+        DownloadActivityController.refresh(force: true)
     }
 
     private func clearTransient(_ id: String) {

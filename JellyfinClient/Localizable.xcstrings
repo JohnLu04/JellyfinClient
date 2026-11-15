@@ -1211,6 +1211,16 @@
         }
       }
     },
+    "Downloading now": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wird heruntergeladen"
+          }
+        }
+      }
+    },
     "Downloading · %lld %%": {
       "localizations": {
         "de": {
@@ -1737,6 +1747,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Miniserie"
+          }
+        }
+      }
+    },
+    "Loading audio tracks & subtitles": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lädt Tonspuren & Untertitel"
           }
         }
       }
@@ -2501,6 +2521,16 @@
         }
       }
     },
+    "Queued": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In Warteschlange"
+          }
+        }
+      }
+    },
     "Radarr Server": {
       "localizations": {
         "de": {
@@ -2687,6 +2717,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Neuer Versuch (%1$lld/%2$lld): %3$@"
+          }
+        }
+      }
+    },
+    "Retrying shortly": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neuer Versuch gleich"
           }
         }
       }

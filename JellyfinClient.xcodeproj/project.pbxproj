@@ -7,11 +7,38 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		4A1F00000000000000000040 /* DownloadActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4A1F00000000000000000031 /* DownloadActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		4A1F00000000000000000020 /* MPVKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4A1F00000000000000000021 /* MPVKit */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		4A1F00000000000000000041 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 4A1F0000000000000000000A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4A1F00000000000000000030;
+			remoteInfo = DownloadActivity;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		4A1F00000000000000000043 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				4A1F00000000000000000040 /* DownloadActivity.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		4A1F00000000000000000001 /* JellyfinClient.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = JellyfinClient.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		4A1F00000000000000000031 /* DownloadActivity.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = DownloadActivity.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		4A1F00000000000000000032 /* DownloadActivity-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "DownloadActivity-Info.plist"; sourceTree = "<group>"; };
 		4A1F0000000000000000000C /* JellyfinClient-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "JellyfinClient-Info.plist"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -19,6 +46,16 @@
 		4A1F00000000000000000002 /* JellyfinClient */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = JellyfinClient;
+			sourceTree = "<group>";
+		};
+		4A1F00000000000000000033 /* DownloadActivity */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = DownloadActivity;
+			sourceTree = "<group>";
+		};
+		4A1F00000000000000000034 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -32,6 +69,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		4A1F00000000000000000035 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -39,7 +83,10 @@
 			isa = PBXGroup;
 			children = (
 				4A1F00000000000000000002 /* JellyfinClient */,
+				4A1F00000000000000000034 /* Shared */,
+				4A1F00000000000000000033 /* DownloadActivity */,
 				4A1F0000000000000000000C /* JellyfinClient-Info.plist */,
+				4A1F00000000000000000032 /* DownloadActivity-Info.plist */,
 				4A1F00000000000000000005 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -48,6 +95,7 @@
 			isa = PBXGroup;
 			children = (
 				4A1F00000000000000000001 /* JellyfinClient.app */,
+				4A1F00000000000000000031 /* DownloadActivity.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -62,13 +110,16 @@
 				4A1F00000000000000000008 /* Sources */,
 				4A1F00000000000000000003 /* Frameworks */,
 				4A1F00000000000000000009 /* Resources */,
+				4A1F00000000000000000043 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				4A1F00000000000000000042 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				4A1F00000000000000000002 /* JellyfinClient */,
+				4A1F00000000000000000034 /* Shared */,
 			);
 			name = JellyfinClient;
 			packageProductDependencies = (
@@ -77,6 +128,27 @@
 			productName = JellyfinClient;
 			productReference = 4A1F00000000000000000001 /* JellyfinClient.app */;
 			productType = "com.apple.product-type.application";
+		};
+		4A1F00000000000000000030 /* DownloadActivity */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4A1F00000000000000000036 /* Build configuration list for PBXNativeTarget "DownloadActivity" */;
+			buildPhases = (
+				4A1F00000000000000000037 /* Sources */,
+				4A1F00000000000000000035 /* Frameworks */,
+				4A1F00000000000000000038 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				4A1F00000000000000000033 /* DownloadActivity */,
+				4A1F00000000000000000034 /* Shared */,
+			);
+			name = DownloadActivity;
+			productName = DownloadActivity;
+			productReference = 4A1F00000000000000000031 /* DownloadActivity.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -89,6 +161,9 @@
 				LastUpgradeCheck = 2700;
 				TargetAttributes = {
 					4A1F00000000000000000006 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+					4A1F00000000000000000030 = {
 						CreatedOnToolsVersion = 27.0;
 					};
 				};
@@ -112,12 +187,20 @@
 			projectRoot = "";
 			targets = (
 				4A1F00000000000000000006 /* JellyfinClient */,
+				4A1F00000000000000000030 /* DownloadActivity */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		4A1F00000000000000000009 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4A1F00000000000000000038 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -134,7 +217,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		4A1F00000000000000000037 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		4A1F00000000000000000042 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4A1F00000000000000000030 /* DownloadActivity */;
+			targetProxy = 4A1F00000000000000000041 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		4A1F00000000000000000010 /* Debug */ = {
@@ -239,6 +337,52 @@
 			};
 			name = Release;
 		};
+		4A1F00000000000000000039 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "DownloadActivity-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Jellyfin Downloads";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.JellyfinClient.DownloadActivity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		4A1F0000000000000000003A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "DownloadActivity-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Jellyfin Downloads";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.JellyfinClient.DownloadActivity;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -256,6 +400,15 @@
 			buildConfigurations = (
 				4A1F00000000000000000010 /* Debug */,
 				4A1F00000000000000000011 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		4A1F00000000000000000036 /* Build configuration list for PBXNativeTarget "DownloadActivity" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4A1F00000000000000000039 /* Debug */,
+				4A1F0000000000000000003A /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
