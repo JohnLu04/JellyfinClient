@@ -401,16 +401,6 @@
         }
       }
     },
-    "Automatic": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Automatisch"
-          }
-        }
-      }
-    },
     "Autoplay Trailers": {
       "localizations": {
         "de": {
@@ -781,16 +771,6 @@
         }
       }
     },
-    "Currently using iOS' background service.": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Derzeit wird der iOS-Hintergrunddienst genutzt."
-          }
-        }
-      }
-    },
     "Decline": {
       "localizations": {
         "de": {
@@ -857,16 +837,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Anfrage löschen"
-          }
-        }
-      }
-    },
-    "Detected on this iPhone: downloads run in the app.": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Auf diesem iPhone erkannt: Downloads laufen in der App."
           }
         }
       }
@@ -1017,16 +987,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Download-Protokoll"
-          }
-        }
-      }
-    },
-    "Download Method": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Download-Methode"
           }
         }
       }
@@ -1437,16 +1397,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "In deiner Bibliothek"
-          }
-        }
-      }
-    },
-    "In the App": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "In der App"
           }
         }
       }
@@ -3197,26 +3147,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Dein Benutzer darf nicht herunterladen oder umwandeln (HTTP 403)."
-          }
-        }
-      }
-    },
-    "iOS Background Service": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iOS-Hintergrunddienst"
-          }
-        }
-      }
-    },
-    "iOS' background service keeps downloading even when the app is closed. Some re-signed installs can't receive its files; then the app downloads itself and stays awake in the background (silent audio, slightly more battery).": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Der iOS-Hintergrunddienst lädt auch weiter, wenn die App geschlossen ist. Manche neu signierten Installationen erhalten seine Dateien aber nicht; dann lädt die App selbst und bleibt im Hintergrund wach (stilles Audio, etwas mehr Akkuverbrauch)."
           }
         }
       }

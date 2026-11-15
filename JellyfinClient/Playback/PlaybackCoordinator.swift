@@ -17,8 +17,6 @@ final class PlaybackCoordinator {
 
     // MARK: - Public
 
-    /// A player is on screen (it owns the audio session then).
-    var isPlayerOpen: Bool { presentedController != nil }
 
     func play(item: BaseItem, api: JellyfinAPI, maxMbit: Double, startTicks: Int64, selection: TrackSelection) async throws {
         let player = PlayerKind.current

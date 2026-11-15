@@ -6,7 +6,6 @@ struct SettingsView: View {
     @Environment(SeerrStore.self) private var seerr
     @AppStorage(SettingsKeys.streamingMbit) private var streamingMbit = 0.0
     @AppStorage(SettingsKeys.downloadMbit) private var downloadMbit = 4.0
-    @AppStorage(SettingsKeys.downloadEngine) private var downloadEngine = DownloadEngineSetting.automatic.rawValue
     @AppStorage(SettingsKeys.videoPlayer) private var videoPlayer = PlayerKind.defaultKind.rawValue
     @AppStorage(SettingsKeys.autoplayTrailers) private var autoplayTrailers = true
     @AppStorage(SettingsKeys.bufferSeconds) private var bufferSeconds = PlaybackBuffer.defaultSeconds
@@ -14,15 +13,6 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
 
     private var selectedPlayer: PlayerKind { PlayerKind(rawValue: videoPlayer) ?? .defaultKind }
-
-    private var downloadEngineFooter: String {
-        let automatic = DownloadEngineSetting(rawValue: downloadEngine) ?? .automatic
-        let base = String(localized: "iOS' background service keeps downloading even when the app is closed. Some re-signed installs can't receive its files; then the app downloads itself and stays awake in the background (silent audio, slightly more battery).")
-        guard automatic == .automatic else { return base }
-        return base + "\n\n" + (downloads.systemEngineDetectedBroken
-            ? String(localized: "Detected on this iPhone: downloads run in the app.")
-            : String(localized: "Currently using iOS' background service."))
-    }
 
     var body: some View {
         NavigationStack {
@@ -102,17 +92,6 @@ struct SettingsView: View {
                     Text("Transcoded Downloads")
                 } footer: {
                     Text("Default bitrate for transcoded downloads. You can also download the original file.")
-                }
-
-                Section {
-                    Picker("Download Method", selection: $downloadEngine) {
-                        Text("Automatic").tag(DownloadEngineSetting.automatic.rawValue)
-                        Text("iOS Background Service").tag(DownloadEngineSetting.system.rawValue)
-                        Text("In the App").tag(DownloadEngineSetting.inApp.rawValue)
-                    }
-                    .onChange(of: downloadEngine) { downloads.downloadEngineChanged() }
-                } footer: {
-                    Text(downloadEngineFooter)
                 }
 
                 Section("Storage") {

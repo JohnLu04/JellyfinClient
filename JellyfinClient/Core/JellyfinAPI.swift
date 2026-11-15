@@ -511,15 +511,16 @@ struct JellyfinAPI {
         Bitrate.bps(forMbit: mbit) >= 1_500_000 ? 192_000 : 128_000
     }
 
-    /// A progressive H.264/AAC MP4 transcoded by the server at the given total bitrate.
-    func transcodedDownloadURL(itemId: String, mediaSourceId: String?, mbit: Double, audioStreamIndex: Int? = nil) -> URL {
+    /// Query for an H.264/AAC transcode at the given total bitrate.
+    private func downloadTranscodeQuery(mediaSourceId: String?, mbit: Double, audioStreamIndex: Int?,
+                                        playSessionId: String?) -> [String: String?] {
         let total = Bitrate.bps(forMbit: mbit)
         let audio = Self.downloadAudioBitrate(forMbit: mbit)
         let video = max(total - audio, 250_000)
         var query: [String: String?] = [
             "mediaSourceId": mediaSourceId,
             "deviceId": Self.deviceId,
-            "playSessionId": UUID().uuidString.replacingOccurrences(of: "-", with: ""),
+            "playSessionId": playSessionId ?? UUID().uuidString.replacingOccurrences(of: "-", with: ""),
             "api_key": accessToken,
             "videoCodec": "h264",
             "audioCodec": "aac",
@@ -529,6 +530,28 @@ struct JellyfinAPI {
         ]
         if let audioStreamIndex { query["audioStreamIndex"] = String(audioStreamIndex) }
         if let width = Bitrate.maxWidth(forMbit: mbit) { query["maxWidth"] = String(width) }
-        return url("Videos/\(itemId)/stream.mp4", query)
+        return query
     }
+
+    /// A progressive H.264/AAC MP4 transcoded by the server at the given total bitrate.
+    func transcodedDownloadURL(itemId: String, mediaSourceId: String?, mbit: Double, audioStreamIndex: Int? = nil) -> URL {
+        url("Videos/\(itemId)/stream.mp4", downloadTranscodeQuery(mediaSourceId: mediaSourceId, mbit: mbit,
+                                                                 audioStreamIndex: audioStreamIndex, playSessionId: nil))
+    }
+
+    /// The HLS playlist of a transcoded download: 24-second fragmented-MP4 segments that can be fetched
+    /// one by one, so an interrupted download continues instead of starting over. Video is always
+    /// re-encoded (no stream copy), so segments cut at exactly the same points after a restart.
+    func hlsDownloadPlaylistURL(itemId: String, mediaSourceId: String?, mbit: Double, audioStreamIndex: Int?,
+                                playSessionId: String) -> URL {
+        var query = downloadTranscodeQuery(mediaSourceId: mediaSourceId, mbit: mbit,
+                                           audioStreamIndex: audioStreamIndex, playSessionId: playSessionId)
+        query["segmentContainer"] = "mp4"
+        query["segmentLength"] = String(Self.downloadSegmentSeconds)
+        query["allowVideoStreamCopy"] = "false"
+        query["breakOnNonKeyFrames"] = "false"
+        return url("Videos/\(itemId)/main.m3u8", query)
+    }
+
+    static let downloadSegmentSeconds = 24
 }
