@@ -55,6 +55,10 @@ final class MPVCore: @unchecked Sendable {
         ("gpu-api", "vulkan"),
         ("gpu-context", "moltenvk"),
         ("hwdec", "videotoolbox"),
+        // mpv's iOS audio output sets the audio session to "mix with others" unless it plays exclusively.
+        // A mixing app can't be the Now Playing app, so the Lock Screen / Control Center player wouldn't
+        // work; it also didn't pause other apps' audio the way a video player should.
+        ("audio-exclusive", "yes"),
         ("video-rotate", "no"),
         ("idle", "yes"),                 // stay alive between files so we can reload streams
         ("keep-open", "no"),
