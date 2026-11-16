@@ -549,6 +549,31 @@ struct JellyfinAPI {
         ])
     }
 
+    /// One audio track as HLS segments (with a tiny picture, as Jellyfin's HLS needs video), so the
+    /// download continues after a dropped connection like the video does.
+    func audioTrackHLSPlaylistURL(itemId: String, mediaSourceId: String?, audioStreamIndex: Int, audioBitrate: Int,
+                                  playSessionId: String) -> URL {
+        url("Videos/\(itemId)/main.m3u8", [
+            "mediaSourceId": mediaSourceId,
+            "deviceId": Self.deviceId,
+            "playSessionId": playSessionId,
+            "api_key": accessToken,
+            "videoCodec": "h264",
+            "videoBitRate": "48000",
+            "maxWidth": "160",
+            "maxHeight": "90",
+            "maxFramerate": "5",
+            "audioCodec": "aac",
+            "audioBitRate": String(audioBitrate),
+            "maxAudioChannels": "2",
+            "audioStreamIndex": String(audioStreamIndex),
+            "segmentContainer": "mp4",
+            "segmentLength": String(Self.downloadSegmentSeconds),
+            "allowVideoStreamCopy": "false",
+            "breakOnNonKeyFrames": "false",
+        ])
+    }
+
     /// Audio bitrate used for transcoded downloads at this total bitrate.
     static func downloadAudioBitrate(forMbit mbit: Double) -> Int {
         Bitrate.bps(forMbit: mbit) >= 1_500_000 ? 192_000 : 128_000

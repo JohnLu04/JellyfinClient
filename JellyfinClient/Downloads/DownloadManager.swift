@@ -32,6 +32,7 @@ final class DownloadManager: NSObject {
     nonisolated static let sessionIdentifier = (Bundle.main.bundleIdentifier ?? "JellyfinClient") + ".downloads"
     private static let maxConcurrent = 1
     private static let maxRetries = 10
+    private static let maxConnectivityRetries = 120
     /// Segments requested at once. More would make Jellyfin restart the transcode: it does once a
     /// request is more than 24 s / segment length ahead of what it is encoding.
     private static let segmentPipeline = 2
@@ -82,17 +83,54 @@ final class DownloadManager: NSObject {
         directory.appendingPathComponent(".\(key).resume")
     }
 
-    /// The segmented video while it grows, and its segment list.
-    private static func hlsOutputURL(for id: String) -> URL { directory.appendingPathComponent(".\(id).hls.mp4") }
-    private static func hlsListURL(for id: String) -> URL { directory.appendingPathComponent(".\(id).hls.json") }
+    /// The segmented video (or audio track) while it grows, and its segment list.
+    private static func hlsOutputURL(for id: String, _ target: HLSTarget = .video) -> URL {
+        directory.appendingPathComponent(".\(id)\(suffix(target)).hls.mp4")
+    }
+    private static func hlsListURL(for id: String, _ target: HLSTarget = .video) -> URL {
+        directory.appendingPathComponent(".\(id)\(suffix(target)).hls.json")
+    }
+    private static func suffix(_ target: HLSTarget) -> String {
+        if case .extra(let n) = target { return ".x\(n)" }
+        return ""
+    }
+
+    private func hlsProgress(of record: DownloadRecord, _ target: HLSTarget) -> HLSProgress? {
+        switch target {
+        case .video: return record.hls
+        case .extra(let n): return record.extras?.indices.contains(n) == true ? record.extras?[n].hls : nil
+        }
+    }
+
+    private func setHLSProgress(_ value: HLSProgress?, at index: Int, _ target: HLSTarget) {
+        switch target {
+        case .video: records[index].hls = value
+        case .extra(let n): if records[index].extras?.indices.contains(n) == true { records[index].extras?[n].hls = value }
+        }
+    }
+
+    private func hlsIsComplete(_ record: DownloadRecord, _ target: HLSTarget) -> Bool {
+        guard let hls = hlsProgress(of: record, target) else { return false }
+        return hls.hasInitSegment && hls.nextSegment >= hls.segmentCount
+    }
+
+    /// Transcoded downloads fetch extra audio tracks as segments too; subtitles are one small file.
+    private func extraUsesHLS(_ record: DownloadRecord, _ n: Int) -> Bool {
+        record.mbit != nil && record.extras?.indices.contains(n) == true && record.extras?[n].kind == .audio
+    }
+
+    private func label(_ target: HLSTarget, _ record: DownloadRecord) -> String {
+        guard case .extra(let n) = target, let extra = record.extras?[n] else { return "" }
+        return "audio track \(extra.streamIndex) (\(extra.title)): "
+    }
 
     private func liveKeys(of id: String) -> [String] {
         liveTasks.keys.filter { DownloadPart.parse($0).id == id }
     }
 
-    /// A segment that arrived before the one in front of it waits on disk as "<id>.seg<n>.<ext>".
-    private func readySegmentFile(id: String, segment n: Int) -> URL? {
-        let prefix = "\(id).seg\(n)."
+    /// A segment that arrived before the one in front of it waits on disk as "<key>.<ext>".
+    private func readySegmentFile(id: String, _ part: DownloadPart) -> URL? {
+        let prefix = part.key(for: id) + "."
         return ((try? FileManager.default.contentsOfDirectory(atPath: Self.directory.path)) ?? [])
             .first { $0.hasPrefix(prefix) }
             .map { Self.directory.appendingPathComponent($0) }
@@ -436,29 +474,40 @@ final class DownloadManager: NSObject {
     private func nextPart(of record: DownloadRecord) -> DownloadPart? {
         if record.fileName == nil {
             guard record.mbit != nil else { return .original }
-            guard let hls = record.hls, FileManager.default.fileExists(atPath: Self.hlsListURL(for: record.id).path) else {
-                return .playlist
-            }
-            if !hls.hasInitSegment { return .initSegment }
-            return hls.nextSegment < hls.segmentCount ? .segment(hls.nextSegment) : nil
+            return nextHLSPart(of: record, .video)
         }
-        return record.nextExtraIndex.map { .extra($0) }
+        guard let n = record.nextExtraIndex else { return nil }
+        return extraUsesHLS(record, n) ? nextHLSPart(of: record, .extra(n)) : .extra(n)
+    }
+
+    /// Segment list, init segment, then the media segments in order (nil: all appended).
+    private func nextHLSPart(of record: DownloadRecord, _ target: HLSTarget) -> DownloadPart? {
+        guard let hls = hlsProgress(of: record, target),
+              FileManager.default.fileExists(atPath: Self.hlsListURL(for: record.id, target).path) else {
+            return .playlist(target)
+        }
+        if !hls.hasInitSegment { return .initSegment(target) }
+        return hls.nextSegment < hls.segmentCount ? .segment(target, hls.nextSegment) : nil
     }
 
     /// What to request now: the next part, or for a transcode the next few segments (the init
     /// segment alone first – requesting it makes Jellyfin restart the transcode).
     private func partsToStart(of record: DownloadRecord) -> [DownloadPart] {
         guard let next = nextPart(of: record) else { return [] }
-        guard case .segment(let first) = next, let hls = record.hls else { return [next] }
+        guard let first = next.segmentNumber, let target = next.hlsTarget, let hls = hlsProgress(of: record, target) else {
+            return [next]
+        }
         return (first..<min(hls.segmentCount, first + Self.segmentPipeline))
-            .filter { readySegmentFile(id: record.id, segment: $0) == nil }
-            .map { .segment($0) }
+            .map { DownloadPart.segment(target, $0) }
+            .filter { readySegmentFile(id: record.id, $0) == nil }
     }
 
     private func begin(at index: Int) {
-        if records[index].fileName == nil, records[index].hlsIsComplete {
-            // The app stopped right after the last segment was appended: just finish the file.
-            do { try finalizeHLS(at: index) } catch { resetHLS(at: index); return }
+        // The app stopped right after the last segment was appended: just finish the file.
+        if records[index].fileName == nil, hlsIsComplete(records[index], .video) {
+            do { try finalizeHLS(at: index, .video) } catch { resetHLS(at: index, .video); return }
+        } else if records[index].fileName != nil, let n = records[index].nextExtraIndex, hlsIsComplete(records[index], .extra(n)) {
+            do { try finalizeHLS(at: index, .extra(n)) } catch { resetHLS(at: index, .extra(n)); return }
         }
         let record = records[index]
         let id = record.id
@@ -481,8 +530,8 @@ final class DownloadManager: NSObject {
             return
         }
         let api = JellyfinAPI(session: stored)
-        if parts == [.playlist] {
-            fetchPlaylist(at: index, api: api)
+        if parts.count == 1, case let part = parts[0], part == .playlist(part.hlsTarget ?? .video), let target = part.hlsTarget {
+            fetchPlaylist(at: index, target, api: api)
             return
         }
         for part in parts {
@@ -504,21 +553,24 @@ final class DownloadManager: NSObject {
         case .original, .playlist:
             url = api.originalDownloadURL(itemId: id)
             what = "original file"
-        case .initSegment, .segment:
-            guard let list = loadSegmentList(id: id) else {
-                resetHLS(at: index)
+        case .initSegment, .segment, .extraInit, .extraSegment:
+            let target = part.hlsTarget ?? .video
+            guard let list = loadSegmentList(id: id, target) else {
+                resetHLS(at: index, target)
                 return
             }
-            if case .segment(let n) = part {
+            if let n = part.segmentNumber {
                 guard list.segmentURLs.indices.contains(n),
-                      let segmentURL = HLSSegmentList.url(list.segmentURLs[n], token: api.accessToken) else { resetHLS(at: index); return }
+                      let segmentURL = HLSSegmentList.url(list.segmentURLs[n], token: api.accessToken) else { resetHLS(at: index, target); return }
                 url = segmentURL
-                what = "segment \(n + 1) of \(list.segmentURLs.count)"
+                what = label(target, record) + "segment \(n + 1) of \(list.segmentURLs.count)"
             } else {
-                guard let initURL = HLSSegmentList.url(list.initURL, token: api.accessToken) else { resetHLS(at: index); return }
+                guard let initURL = HLSSegmentList.url(list.initURL, token: api.accessToken) else { resetHLS(at: index, target); return }
                 url = initURL
-                what = "init segment"
+                what = label(target, record) + "init segment"
             }
+        case .extraPlaylist:
+            return          // fetched with a plain request (fetchPlaylist)
         case .extra(let n):
             guard let item = record.extras?[n] else { complete(at: index); return }
             switch item.kind {
@@ -687,25 +739,36 @@ final class DownloadManager: NSObject {
     // MARK: - HLS (transcoded downloads)
 
     /// Asks the server for the segment list of the transcode. Small and quick, so a plain request.
-    private func fetchPlaylist(at index: Int, api: JellyfinAPI) {
+    private func fetchPlaylist(at index: Int, _ target: HLSTarget, api: JellyfinAPI) {
         let record = records[index]
         let id = record.id
-        guard let mbit = record.mbit, !playlistFetches.contains(id) else { return }
-        let playSessionId = record.hls?.playSessionId ?? UUID().uuidString.replacingOccurrences(of: "-", with: "")
-        let url = api.hlsDownloadPlaylistURL(itemId: id, mediaSourceId: record.mediaSourceId, mbit: mbit,
+        let fetchKey = DownloadPart.playlist(target).key(for: id)
+        guard let mbit = record.mbit, !playlistFetches.contains(fetchKey) else { return }
+        let playSessionId = hlsProgress(of: record, target)?.playSessionId ?? UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        let url: URL
+        switch target {
+        case .video:
+            url = api.hlsDownloadPlaylistURL(itemId: id, mediaSourceId: record.mediaSourceId, mbit: mbit,
                                              audioStreamIndex: record.mainAudioIndex, playSessionId: playSessionId)
+        case .extra(let n):
+            guard let extra = record.extras?[n] else { return }
+            url = api.audioTrackHLSPlaylistURL(itemId: id, mediaSourceId: record.mediaSourceId, audioStreamIndex: extra.streamIndex,
+                                               audioBitrate: JellyfinAPI.downloadAudioBitrate(forMbit: mbit), playSessionId: playSessionId)
+        }
         var request = URLRequest(url: url)
         request.setValue(api.authorizationHeader, forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 60
-        playlistFetches.insert(id)
+        playlistFetches.insert(fetchKey)
         records[index].state = .downloading
-        records[index].bytesWritten = 0
-        records[index].progress = 0
+        if target == .video {
+            records[index].bytesWritten = 0
+            records[index].progress = 0
+        }
         saveIndex()
-        DownloadDiagnostics.log("\(id): requesting the segment list (\(Bitrate.label(mbit)))")
+        DownloadDiagnostics.log("\(id): \(label(target, record))requesting the segment list (\(Bitrate.label(mbit)))")
 
         Task {
-            defer { playlistFetches.remove(id) }
+            defer { playlistFetches.remove(fetchKey) }
             var failure: NSError?
             var status: Int?
             do {
@@ -713,15 +776,15 @@ final class DownloadManager: NSObject {
                 status = (response as? HTTPURLResponse)?.statusCode
                 if status == 200, let text = String(data: data, encoding: .utf8),
                    let list = HLSSegmentList.parse(text, relativeTo: url) {
-                    try JSONEncoder().encode(list).write(to: Self.hlsListURL(for: id), options: .atomic)
+                    try JSONEncoder().encode(list).write(to: Self.hlsListURL(for: id, target), options: .atomic)
                     guard let index = records.firstIndex(where: { $0.id == id }), records[index].isActive else { return }
-                    try? FileManager.default.removeItem(at: Self.hlsOutputURL(for: id))
-                    records[index].hls = HLSProgress(segmentCount: list.segmentURLs.count, nextSegment: 0,
-                                                     hasInitSegment: false, bytes: 0, playSessionId: playSessionId)
+                    try? FileManager.default.removeItem(at: Self.hlsOutputURL(for: id, target))
+                    setHLSProgress(HLSProgress(segmentCount: list.segmentURLs.count, nextSegment: 0,
+                                               hasInitSegment: false, bytes: 0, playSessionId: playSessionId), at: index, target)
                     records[index].state = .queued
                     records[index].retryCount = nil
                     saveIndex()
-                    DownloadDiagnostics.log("\(id): \(list.segmentURLs.count) segments of \(JellyfinAPI.downloadSegmentSeconds) s")
+                    DownloadDiagnostics.log("\(id): \(label(target, records[index]))\(list.segmentURLs.count) segments of \(JellyfinAPI.downloadSegmentSeconds) s")
                     pump()
                     return
                 }
@@ -731,23 +794,32 @@ final class DownloadManager: NSObject {
             }
             guard let index = records.firstIndex(where: { $0.id == id }), records[index].isActive else { return }
             DownloadDiagnostics.log("\(id): segment list failed – " + (failure.map(DownloadDiagnostics.describe) ?? "HTTP \(status ?? 0)"))
-            handleFailure(at: index, part: .playlist, task: nil, error: failure, httpStatus: failure == nil ? status : nil)
+            handleFailure(at: index, part: .playlist(target), task: nil, error: failure, httpStatus: failure == nil ? status : nil)
         }
     }
 
-    /// All segments are appended: the grown file becomes the video.
-    private func finalizeHLS(at index: Int) throws {
-        guard let hls = records[index].hls else { return }
+    /// All segments are appended: the grown file becomes the video (or the audio track's file).
+    private func finalizeHLS(at index: Int, _ target: HLSTarget) throws {
+        guard let hls = hlsProgress(of: records[index], target) else { return }
         let id = records[index].id
-        let final = "\(id).mp4"
+        let final: String
+        switch target {
+        case .video: final = "\(id).mp4"
+        case .extra(let n): final = DownloadPart.extra(n).key(for: id) + ".mp4"
+        }
         let destination = Self.directory.appendingPathComponent(final)
         try? FileManager.default.removeItem(at: destination)
-        try FileManager.default.moveItem(at: Self.hlsOutputURL(for: id), to: destination)
+        try FileManager.default.moveItem(at: Self.hlsOutputURL(for: id, target), to: destination)
         var values = URLResourceValues()
         values.isExcludedFromBackup = true
         var url = destination
         try? url.setResourceValues(values)
-        try? FileManager.default.removeItem(at: Self.hlsListURL(for: id))
+        try? FileManager.default.removeItem(at: Self.hlsListURL(for: id, target))
+        if case .extra(let n) = target {
+            records[index].extras?[n].fileName = final
+            DownloadDiagnostics.log("\(id): \(label(target, records[index]))assembled from \(hls.segmentCount) segments (\(hls.bytes) bytes)")
+            return
+        }
         records[index].fileName = final
         records[index].bytesWritten = hls.bytes
         records[index].expectedBytes = hls.bytes
@@ -755,17 +827,17 @@ final class DownloadManager: NSObject {
         DownloadDiagnostics.log("\(id): video assembled from \(hls.segmentCount) segments (\(hls.bytes) bytes)")
     }
 
-    private func loadSegmentList(id: String) -> HLSSegmentList? {
-        guard let data = try? Data(contentsOf: Self.hlsListURL(for: id)) else { return nil }
+    private func loadSegmentList(id: String, _ target: HLSTarget) -> HLSSegmentList? {
+        guard let data = try? Data(contentsOf: Self.hlsListURL(for: id, target)) else { return nil }
         return try? JSONDecoder().decode(HLSSegmentList.self, from: data)
     }
 
     /// The segment list is gone or broken: start the segmented download over.
-    private func resetHLS(at index: Int) {
+    private func resetHLS(at index: Int, _ target: HLSTarget) {
         let id = records[index].id
-        records[index].hls = nil
-        try? FileManager.default.removeItem(at: Self.hlsListURL(for: id))
-        try? FileManager.default.removeItem(at: Self.hlsOutputURL(for: id))
+        setHLSProgress(nil, at: index, target)
+        try? FileManager.default.removeItem(at: Self.hlsListURL(for: id, target))
+        try? FileManager.default.removeItem(at: Self.hlsOutputURL(for: id, target))
         records[index].state = .queued
         saveIndex()
         DownloadDiagnostics.log("\(id): segment list missing – requesting it again")
@@ -774,9 +846,9 @@ final class DownloadManager: NSObject {
 
     /// Appends a finished segment to the growing video. The file is first cut back to the size after
     /// the previous append, so a segment can never end up in it twice.
-    private func appendSegment(_ segment: URL, at index: Int, isInit: Bool) throws {
-        guard var hls = records[index].hls else { return }
-        let output = Self.hlsOutputURL(for: records[index].id)
+    private func appendSegment(_ segment: URL, at index: Int, _ target: HLSTarget, isInit: Bool) throws {
+        guard var hls = hlsProgress(of: records[index], target) else { return }
+        let output = Self.hlsOutputURL(for: records[index].id, target)
         let fileManager = FileManager.default
         if isInit || !fileManager.fileExists(atPath: output.path) {
             try? fileManager.removeItem(at: output)
@@ -799,7 +871,7 @@ final class DownloadManager: NSObject {
         try handle.synchronize()
         hls.bytes = Int64(try handle.offset())
         if isInit { hls.hasInitSegment = true } else { hls.nextSegment += 1 }
-        records[index].hls = hls
+        setHLSProgress(hls, at: index, target)
         try? fileManager.removeItem(at: segment)
     }
 
@@ -811,7 +883,7 @@ final class DownloadManager: NSObject {
         if records[index].errorMessage != nil { records[index].errorMessage = nil }     // data is flowing again
         let total: Int64
         switch part {
-        case .extra:
+        case .extra, .extraPlaylist, .extraInit, .extraSegment:
             return                  // extra files: only the "x of y" count is shown
         case .initSegment, .segment:
             guard let hls = records[index].hls else { return }
@@ -879,39 +951,44 @@ final class DownloadManager: NSObject {
         records[index].retryAfter = nil
 
         switch part {
-        case .initSegment, .segment:
-            if case .segment(let n) = part, let hls = records[index].hls, n != hls.nextSegment {
+        case .initSegment, .segment, .extraInit, .extraSegment:
+            let target = part.hlsTarget ?? .video
+            if let n = part.segmentNumber, let hls = hlsProgress(of: records[index], target), n != hls.nextSegment {
                 // Arrived before the segment in front of it; appended once that one is there.
                 guard n > hls.nextSegment else { try? FileManager.default.removeItem(at: file); break }
                 break
             }
             do {
-                try appendSegment(file, at: index, isInit: part == .initSegment)
+                try appendSegment(file, at: index, target, isInit: part.isInitSegment)
                 // Segments that arrived early can follow now.
-                while let hls = records[index].hls, hls.hasInitSegment, hls.nextSegment < hls.segmentCount,
-                      let ready = readySegmentFile(id: id, segment: hls.nextSegment) {
-                    try appendSegment(ready, at: index, isInit: false)
+                while let hls = hlsProgress(of: records[index], target), hls.hasInitSegment, hls.nextSegment < hls.segmentCount,
+                      let ready = readySegmentFile(id: id, .segment(target, hls.nextSegment)) {
+                    try appendSegment(ready, at: index, target, isInit: false)
                 }
             } catch {
                 DownloadDiagnostics.log("\(id): couldn't append \(key) – \(DownloadDiagnostics.describe(error as NSError))")
                 handleFailure(at: index, part: part, task: task, error: error as NSError, httpStatus: nil)
                 return
             }
-            if let hls = records[index].hls {
+            if let hls = hlsProgress(of: records[index], target) {
                 inflightBytes = inflightBytes.filter { DownloadPart.parse($0.key).id != id || liveTasks[$0.key] != nil }
-                records[index].bytesWritten = hls.bytes
+                if target == .video { records[index].bytesWritten = hls.bytes }
                 if hls.nextSegment == 1 || hls.nextSegment % 20 == 0 {
-                    DownloadDiagnostics.log("\(id): \(hls.nextSegment) of \(hls.segmentCount) segments")
+                    DownloadDiagnostics.log("\(id): \(label(target, records[index]))\(hls.nextSegment) of \(hls.segmentCount) segments")
                 }
             }
-            if records[index].hlsIsComplete {
+            // Data gets through: interruptions before don't count against the retries any more.
+            if target != .video { records[index].retryCount = nil }
+            if hlsIsComplete(records[index], target) {
                 do {
-                    try finalizeHLS(at: index)
+                    try finalizeHLS(at: index, target)
                 } catch {
                     handleFailure(at: index, part: part, task: task, error: error as NSError, httpStatus: nil)
                     return
                 }
             }
+        case .extraPlaylist:
+            break
         case .extra(let n):
             if records[index].extras?.indices.contains(n) == true {
                 records[index].extras?[n].fileName = fileName
@@ -953,6 +1030,10 @@ final class DownloadManager: NSObject {
     private func skipExtra(at index: Int, extra: Int, reason: String) {
         let id = records[index].id
         records[index].extras?[extra].skipped = true
+        if extraUsesHLS(records[index], extra) {
+            try? FileManager.default.removeItem(at: Self.hlsListURL(for: id, .extra(extra)))
+            try? FileManager.default.removeItem(at: Self.hlsOutputURL(for: id, .extra(extra)))
+        }
         records[index].retryCount = nil
         records[index].retryAfter = nil
         records[index].errorMessage = nil
@@ -1020,7 +1101,7 @@ final class DownloadManager: NSObject {
     private func handleFailure(at index: Int, part: DownloadPart, task: URLSessionTask?, error: NSError?, httpStatus: Int?) {
         let id = records[index].id
         func giveUp(_ message: String) {
-            if case .extra(let n) = part {
+            if let n = part.extraIndex {
                 skipExtra(at: index, extra: n, reason: message)
             } else {
                 fail(at: index, message: message)
@@ -1048,7 +1129,10 @@ final class DownloadManager: NSObject {
             return
         }
         let attempt = (records[index].retryCount ?? 0) + 1
-        guard attempt <= Self.maxRetries else {
+        // A dropped or missing connection isn't the server's fault: keep waiting for it much longer
+        // (about two hours at the longest wait) instead of giving up after a few minutes.
+        let limit = error.map(Self.isConnectivityError) == true ? Self.maxConnectivityRetries : Self.maxRetries
+        guard attempt <= limit else {
             giveUp(httpStatus.map(Self.message(forStatus:)) ?? error?.localizedDescription ?? String(localized: "Download failed."))
             return
         }
@@ -1060,8 +1144,9 @@ final class DownloadManager: NSObject {
         records[index].state = .queued
         records[index].retryAfter = delay > 0 ? .now.addingTimeInterval(delay) : nil
         let reason = httpStatus.map(Self.message(forStatus:)) ?? error?.localizedDescription ?? ""
-        records[index].errorMessage = String(localized: "Retrying (\(attempt)/\(Self.maxRetries)): \(reason)")
+        records[index].errorMessage = String(localized: "Retrying (\(attempt)/\(limit)): \(reason)")
         downloadLog.notice("Retrying \(id, privacy: .public) in \(delay) s (attempt \(attempt))")
+        DownloadDiagnostics.log("\(id): \(part.key(for: id)) interrupted, retry \(attempt)/\(limit) in \(Int(delay)) s – \(reason)")
         saveIndex()
         pump()
     }
@@ -1117,6 +1202,15 @@ final class DownloadManager: NSObject {
 
     private static func isRetryable(status: Int) -> Bool {
         status == 408 || status == 429 || status >= 500
+    }
+
+    /// The connection dropped or isn't there (as opposed to the server refusing the request).
+    private static func isConnectivityError(_ error: NSError) -> Bool {
+        guard error.domain == NSURLErrorDomain else { return false }
+        return [NSURLErrorNetworkConnectionLost, NSURLErrorNotConnectedToInternet, NSURLErrorTimedOut,
+                NSURLErrorCannotConnectToHost, NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed,
+                NSURLErrorInternationalRoamingOff, NSURLErrorDataNotAllowed, NSURLErrorCallIsActive,
+                NSURLErrorBackgroundSessionWasDisconnected, NSURLErrorSecureConnectionFailed].contains(error.code)
     }
 
     private static func isRetryable(_ error: NSError) -> Bool {
@@ -1219,11 +1313,6 @@ final class DownloadManager: NSObject {
 }
 
 private extension DownloadRecord {
-    var hlsIsComplete: Bool {
-        guard let hls else { return false }
-        return hls.hasInitSegment && hls.nextSegment >= hls.segmentCount
-    }
-
     /// Part of it is already there (segments, the video before its extras, a retry).
     var isUnderWay: Bool { (retryCount ?? 0) > 0 || fileName != nil || (hls?.nextSegment ?? 0) > 0 || hls?.hasInitSegment == true }
 }

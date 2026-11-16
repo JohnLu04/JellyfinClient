@@ -12,6 +12,9 @@ struct DownloadExtra: Codable, Equatable {
     var isDefault: Bool?
     var fileName: String?       // set once downloaded
     var skipped: Bool?          // the server couldn't deliver it; the download completes without it
+    /// Audio tracks of transcoded downloads come as HLS segments like the video, so a dropped
+    /// connection only costs the segment in flight.
+    var hls: HLSProgress? = nil
 
     var isPending: Bool { fileName == nil && skipped != true }
 }
@@ -101,6 +104,12 @@ struct DownloadRecord: Codable, Identifiable, Equatable {
     var isActive: Bool { state == .queued || state == .downloading }
 }
 
+/// What a segmented (HLS) transfer builds: the video, or an extra audio track (by its index in `extras`).
+enum HLSTarget: Equatable {
+    case video
+    case extra(Int)
+}
+
 /// One piece of a download. Each has its own key, used as task description and file name.
 enum DownloadPart: Equatable {
     /// The original file in one piece (resumable through URLSession's resume data).
@@ -109,7 +118,12 @@ enum DownloadPart: Equatable {
     case playlist
     case initSegment
     case segment(Int)
+    /// An extra file in one piece (subtitles).
     case extra(Int)
+    /// An extra audio track as HLS: its segment list, init segment and segments.
+    case extraPlaylist(Int)
+    case extraInit(Int)
+    case extraSegment(Int, Int)
 
     func key(for id: String) -> String {
         switch self {
@@ -117,7 +131,57 @@ enum DownloadPart: Equatable {
         case .initSegment: "\(id).init"
         case .segment(let n): "\(id).seg\(n)"
         case .extra(let n): "\(id).extra\(n)"
+        case .extraPlaylist(let n): "\(id).x\(n)list"
+        case .extraInit(let n): "\(id).x\(n)init"
+        case .extraSegment(let n, let k): "\(id).x\(n)seg\(k)"
         }
+    }
+
+    /// The segmented transfer this part belongs to, if any.
+    var hlsTarget: HLSTarget? {
+        switch self {
+        case .playlist, .initSegment, .segment: .video
+        case .extraPlaylist(let n), .extraInit(let n), .extraSegment(let n, _): .extra(n)
+        case .original, .extra: nil
+        }
+    }
+
+    /// The extra file (subtitle or audio track) this part belongs to.
+    var extraIndex: Int? {
+        switch self {
+        case .extra(let n), .extraPlaylist(let n), .extraInit(let n), .extraSegment(let n, _): n
+        default: nil
+        }
+    }
+
+    var isInitSegment: Bool {
+        switch self {
+        case .initSegment, .extraInit: true
+        default: false
+        }
+    }
+
+    /// Index of a media segment.
+    var segmentNumber: Int? {
+        switch self {
+        case .segment(let k), .extraSegment(_, let k): k
+        default: nil
+        }
+    }
+
+    static func playlist(_ target: HLSTarget) -> DownloadPart {
+        if case .extra(let n) = target { return .extraPlaylist(n) }
+        return .playlist
+    }
+
+    static func initSegment(_ target: HLSTarget) -> DownloadPart {
+        if case .extra(let n) = target { return .extraInit(n) }
+        return .initSegment
+    }
+
+    static func segment(_ target: HLSTarget, _ k: Int) -> DownloadPart {
+        if case .extra(let n) = target { return .extraSegment(n, k) }
+        return .segment(k)
     }
 
     /// "abc.seg12" → ("abc", .segment(12)); a plain id is the original file.
@@ -128,6 +192,13 @@ enum DownloadPart: Equatable {
         if rest == "init" { return (id, .initSegment) }
         if rest.hasPrefix("seg"), let n = Int(rest.dropFirst(3)) { return (id, .segment(n)) }
         if rest.hasPrefix("extra"), let n = Int(rest.dropFirst(5)) { return (id, .extra(n)) }
+        if rest.hasPrefix("x"), let match = rest.wholeMatch(of: /x(\d+)(list|init|seg)(\d*)/), let n = Int(match.1) {
+            switch match.2 {
+            case "list": return (id, .extraPlaylist(n))
+            case "init": return (id, .extraInit(n))
+            default: if let k = Int(match.3) { return (id, .extraSegment(n, k)) }
+            }
+        }
         return (key, .original)
     }
 }
