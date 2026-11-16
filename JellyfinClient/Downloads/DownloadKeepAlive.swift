@@ -47,6 +47,9 @@ enum DownloadKeepAlive {
     }
 
     static func progress(completed: Int64, total: Int64) {
+        #if DEBUG
+        if DebugKeeper.isEnabled { DebugKeeper.progress(completed: completed, total: total) }
+        #endif
         #if compiler(>=6.2)
         if #available(iOS 26.0, *) { Keeper.shared.updateProgress(completed: completed, total: total) }
         #endif
@@ -84,6 +87,16 @@ private enum DebugKeeper {
                 }
             }
         }
+    }
+
+    private static var lastPercent = -1
+
+    /// Prints each whole percent the real keeper would report.
+    static func progress(completed: Int64, total: Int64) {
+        let percent = Int(Double(completed) / Double(max(total, 1)) * 100)
+        guard percent != lastPercent else { return }
+        lastPercent = percent
+        print("[KeepAliveDebug] progress \(percent) %")
     }
 
     static func end() {

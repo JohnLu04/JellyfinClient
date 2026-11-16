@@ -44,6 +44,8 @@ final class DownloadManager: NSObject {
     /// Handed over by the app delegate when iOS wakes the app for this session; called once all
     /// pending events are delivered.
     @ObservationIgnored var backgroundCompletionHandler: (() -> Void)?
+    /// What the keep-alive was last told, for which download.
+    @ObservationIgnored private var keepAliveReported: (id: String, units: Int64) = ("", 0)
 
     @ObservationIgnored private var session: URLSession!
     /// For transfers started while the app is kept running in the background (see the type's notes).
@@ -743,7 +745,12 @@ final class DownloadManager: NSObject {
         let record = records[index]
         let id = record.id
         let fetchKey = DownloadPart.playlist(target).key(for: id)
-        guard let mbit = record.mbit, !playlistFetches.contains(fetchKey) else { return }
+        guard let mbit = record.mbit else { return }
+        guard !playlistFetches.contains(fetchKey) else {
+            // Already on its way (fetched ahead, see prefetchAudioPlaylists): carries on when it's there.
+            records[index].state = .downloading
+            return
+        }
         let playSessionId = hlsProgress(of: record, target)?.playSessionId ?? UUID().uuidString.replacingOccurrences(of: "-", with: "")
         let url: URL
         switch target {
@@ -768,7 +775,9 @@ final class DownloadManager: NSObject {
         DownloadDiagnostics.log("\(id): \(label(target, record))requesting the segment list (\(Bitrate.label(mbit)))")
 
         Task {
-            defer { playlistFetches.remove(fetchKey) }
+            // When the app goes to the background meanwhile, iOS gives it time to finish this request.
+            let time = BackgroundTime("Segment list")
+            defer { playlistFetches.remove(fetchKey); time.end() }
             var failure: NSError?
             var status: Int?
             do {
@@ -785,6 +794,7 @@ final class DownloadManager: NSObject {
                     records[index].retryCount = nil
                     saveIndex()
                     DownloadDiagnostics.log("\(id): \(label(target, records[index]))\(list.segmentURLs.count) segments of \(JellyfinAPI.downloadSegmentSeconds) s")
+                    if target == .video { prefetchAudioPlaylists(id: id, api: api) }
                     pump()
                     return
                 }
@@ -795,6 +805,51 @@ final class DownloadManager: NSObject {
             guard let index = records.firstIndex(where: { $0.id == id }), records[index].isActive else { return }
             DownloadDiagnostics.log("\(id): segment list failed – " + (failure.map(DownloadDiagnostics.describe) ?? "HTTP \(status ?? 0)"))
             handleFailure(at: index, part: .playlist(target), task: nil, error: failure, httpStatus: failure == nil ? status : nil)
+        }
+    }
+
+    /// Fetches the extra audio tracks' segment lists right after the video's, while the app is surely
+    /// running. When the video is done – maybe in the background, with the iPhone locked, where a plain
+    /// request can't run – the tracks go straight on with their segments in iOS' download service.
+    /// If this fails, the list is simply requested again when the track is due.
+    private func prefetchAudioPlaylists(id: String, api: JellyfinAPI) {
+        guard let record = records.first(where: { $0.id == id }), let mbit = record.mbit, let extras = record.extras else { return }
+        for n in extras.indices where extraUsesHLS(record, n) && hlsProgress(of: record, .extra(n)) == nil {
+            let target = HLSTarget.extra(n)
+            let fetchKey = DownloadPart.playlist(target).key(for: id)
+            guard !playlistFetches.contains(fetchKey) else { continue }
+            playlistFetches.insert(fetchKey)
+            let playSessionId = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+            let url = api.audioTrackHLSPlaylistURL(itemId: id, mediaSourceId: record.mediaSourceId, audioStreamIndex: extras[n].streamIndex,
+                                                   audioBitrate: JellyfinAPI.downloadAudioBitrate(forMbit: mbit), playSessionId: playSessionId)
+            var request = URLRequest(url: url)
+            request.setValue(api.authorizationHeader, forHTTPHeaderField: "Authorization")
+            request.timeoutInterval = 60
+            Task {
+                let time = BackgroundTime("Segment list")
+                defer { time.end() }
+                var list: HLSSegmentList?
+                if let (data, response) = try? await URLSession.shared.data(for: request),
+                   (response as? HTTPURLResponse)?.statusCode == 200, let text = String(data: data, encoding: .utf8) {
+                    list = HLSSegmentList.parse(text, relativeTo: url)
+                }
+                playlistFetches.remove(fetchKey)
+                guard let index = records.firstIndex(where: { $0.id == id }), records[index].isActive else { return }
+                if let list, hlsProgress(of: records[index], target) == nil,
+                   (try? JSONEncoder().encode(list).write(to: Self.hlsListURL(for: id, target), options: .atomic)) != nil {
+                    setHLSProgress(HLSProgress(segmentCount: list.segmentURLs.count, nextSegment: 0,
+                                               hasInitSegment: false, bytes: 0, playSessionId: playSessionId), at: index, target)
+                    DownloadDiagnostics.log("\(id): \(label(target, records[index]))\(list.segmentURLs.count) segments of \(JellyfinAPI.downloadSegmentSeconds) s (fetched ahead)")
+                } else {
+                    DownloadDiagnostics.log("\(id): \(label(target, records[index]))segment list not fetched ahead – requested when the track is due")
+                }
+                // The track may have been waiting for this.
+                if records[index].state == .downloading, liveKeys(of: id).isEmpty {
+                    records[index].state = .queued
+                }
+                saveIndex()
+                pump()
+            }
         }
     }
 
@@ -881,10 +936,15 @@ final class DownloadManager: NSObject {
         let (id, part) = DownloadPart.parse(key)
         guard liveTasks[key] === task, let index = records.firstIndex(where: { $0.id == id }) else { return }
         if records[index].errorMessage != nil { records[index].errorMessage = nil }     // data is flowing again
-        let total: Int64
         switch part {
-        case .extra, .extraPlaylist, .extraInit, .extraSegment:
-            return                  // extra files: only the "x of y" count is shown
+        case .extraInit, .extraSegment:
+            // Extra files: only the "x of y" count is shown, but the keep-alive needs to see progress.
+            inflightBytes[key] = (written, expected)
+            reportKeepAliveProgress(of: records[index])
+            return
+        case .extra, .extraPlaylist:
+            reportKeepAliveProgress(of: records[index])
+            return
         case .initSegment, .segment:
             guard let hls = records[index].hls else { return }
             inflightBytes[key] = (written, expected)
@@ -892,10 +952,9 @@ final class DownloadManager: NSObject {
             records[index].bytesWritten = hls.bytes + inflight.reduce(0) { $0 + $1.written }
             let fraction = inflight.reduce(0.0) { $0 + ($1.expected > 0 ? Double($1.written) / Double($1.expected) : 0) }
             records[index].progress = min(0.99, (Double(hls.nextSegment) + fraction) / Double(max(hls.segmentCount, 1)))
-            total = records[index].expectedBytes ?? 0
         case .original, .playlist:
             records[index].bytesWritten = written
-            total = expected > 0 ? expected : (records[index].expectedBytes ?? 0)
+            let total = expected > 0 ? expected : (records[index].expectedBytes ?? 0)
             if expected > 0 { records[index].expectedBytes = expected }
             if total > 0 { records[index].progress = min(0.99, Double(written) / Double(total)) }
         }
@@ -916,8 +975,47 @@ final class DownloadManager: NSObject {
         } else {
             speedSamples[id] = (now, bytes)
         }
-        DownloadKeepAlive.progress(completed: bytes, total: total)
+        reportKeepAliveProgress(of: records[index])
         if now.timeIntervalSince(lastIndexSave) > 10 { saveIndex() }
+    }
+
+    /// iOS ends the keep-alive when its progress stops moving, so it follows the whole download: the
+    /// video and the extra audio tracks, each weighted by its (estimated) size.
+    private func reportKeepAliveProgress(of record: DownloadRecord) {
+        // Weights that don't change while it runs (the real size replaces the estimate once the video is done).
+        let videoBytes = record.mbit.flatMap { Bitrate.estimatedBytes(mbit: $0, runTimeTicks: record.runTimeTicks) }
+            ?? record.expectedBytes ?? 1
+        var parts: [(weight: Double, done: Double)] = [
+            (Double(max(videoBytes, 1)), record.fileName != nil ? 1 : record.progress),
+        ]
+        if let mbit = record.mbit, let extras = record.extras {
+            let seconds = Double(record.runTimeTicks ?? 0) / 10_000_000
+            // Audio plus the tiny picture (see audioTrackHLSPlaylistURL).
+            let trackBytes = max(Double(JellyfinAPI.downloadAudioBitrate(forMbit: mbit) + 60_000) / 8 * seconds, 1)
+            for n in extras.indices where extras[n].kind == .audio {
+                let done: Double
+                if extras[n].fileName != nil || extras[n].skipped == true {
+                    done = 1
+                } else if let hls = extras[n].hls {
+                    let inflight = inflightBytes.reduce(0.0) { sum, entry in
+                        let (id, part) = DownloadPart.parse(entry.key)
+                        guard id == record.id, part.hlsTarget == .extra(n), part.segmentNumber != nil, entry.value.expected > 0 else { return sum }
+                        return sum + Double(entry.value.written) / Double(entry.value.expected)
+                    }
+                    done = min(1, (Double(hls.nextSegment) + inflight) / Double(max(hls.segmentCount, 1)))
+                } else {
+                    done = 0
+                }
+                parts.append((trackBytes, done))
+            }
+        }
+        let weight = parts.reduce(0) { $0 + $1.weight }
+        let fraction = parts.reduce(0) { $0 + $1.weight * $1.done } / weight
+        // Never backwards (a segment that finishes before the one in front of it dips the estimate).
+        var units = Int64(fraction * 100_000)
+        if keepAliveReported.id == record.id { units = max(units, keepAliveReported.units) }
+        keepAliveReported = (record.id, units)
+        DownloadKeepAlive.progress(completed: units, total: 100_000)
     }
 
     private func finished(key: String, task: URLSessionTask?, fileName: String, size: Int64) {
@@ -978,7 +1076,10 @@ final class DownloadManager: NSObject {
                 }
             }
             // Data gets through: interruptions before don't count against the retries any more.
-            if target != .video { records[index].retryCount = nil }
+            if target != .video {
+                records[index].retryCount = nil
+                reportKeepAliveProgress(of: records[index])
+            }
             if hlsIsComplete(records[index], target) {
                 do {
                     try finalizeHLS(at: index, target)
@@ -1439,5 +1540,24 @@ enum DownloadNotifications {
         content.sound = .default
         let request = UNNotificationRequest(identifier: "download-\(id)", content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
+    }
+}
+
+/// A little time from iOS to finish a short request (such as a segment list) if the app goes to the
+/// background meanwhile; `end()` when it's done.
+@MainActor
+final class BackgroundTime {
+    private var identifier = UIBackgroundTaskIdentifier.invalid
+
+    init(_ name: String) {
+        identifier = UIApplication.shared.beginBackgroundTask(withName: name) {
+            MainActor.assumeIsolated { self.end() }
+        }
+    }
+
+    func end() {
+        guard identifier != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(identifier)
+        identifier = .invalid
     }
 }
