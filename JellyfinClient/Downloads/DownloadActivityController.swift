@@ -31,6 +31,10 @@ enum DownloadActivityController {
             return
         }
         guard let state = currentState() else { return }
+        // A finished or paused activity still showing: the new one replaces it.
+        for old in Activity<DownloadActivityAttributes>.activities where old.activityState == .ended {
+            Task { await old.end(nil, dismissalPolicy: .immediate) }
+        }
         do {
             activity = try Activity.request(attributes: DownloadActivityAttributes(),
                                             content: ActivityContent(state: state, staleDate: nil), pushType: nil)
@@ -47,6 +51,22 @@ enum DownloadActivityController {
     /// After launch: keep following an activity from before, or remove it if nothing is pending.
     static func appLaunched() {
         #if DEBUG
+        // JF_DEBUG_DOWNLOAD="e1:0:8:15" downloads e1 (0 = original, else Mbit/s), pauses at 8 s, resumes at 15 s.
+        if let script = ProcessInfo.processInfo.environment["JF_DEBUG_DOWNLOAD"], let stored = SessionStorage.load() {
+            let parts = script.split(separator: ":").map(String.init)
+            let api = JellyfinAPI(session: stored)
+            Task {
+                guard parts.count == 4, let mbit = Double(parts[1]), let pauseAt = Double(parts[2]), let resumeAt = Double(parts[3]),
+                      let item = try? await api.item(id: parts[0]) else { return }
+                DownloadManager.shared.start(item: item, api: api, mbit: mbit > 0 ? mbit : nil)
+                try? await Task.sleep(for: .seconds(pauseAt))
+                print("[DLDebug] pause at \(DownloadManager.shared.record(for: item.id)?.bytesWritten ?? 0) bytes")
+                DownloadManager.shared.pause(id: item.id)
+                try? await Task.sleep(for: .seconds(resumeAt - pauseAt))
+                print("[DLDebug] resume, state=\(DownloadManager.shared.record(for: item.id)?.state.rawValue ?? "-")")
+                DownloadManager.shared.resume(id: item.id)
+            }
+        }
         if let id = ProcessInfo.processInfo.environment["JF_DEBUG_PLAY_ITEM"], let stored = SessionStorage.load() {
             let api = JellyfinAPI(session: stored)
             Task {
@@ -130,7 +150,10 @@ enum DownloadActivityController {
         state.queued = 0
         state.bytesPerSecond = nil
         state.bytesWritten = record.bytesWritten
-        if record.state == .completed {
+        if record.state == .paused {
+            state.phase = .waiting
+            state.status = String(localized: "Paused")
+        } else if record.state == .completed {
             state.phase = .completed
             state.status = String(localized: "Download Complete")
             state.progress = 1

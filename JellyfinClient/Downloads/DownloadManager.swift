@@ -53,6 +53,8 @@ final class DownloadManager: NSObject {
     @ObservationIgnored private var abandonedTasks: Set<ObjectIdentifier> = []
     /// iOS ended the keep-alive: no new in-app transfers until the app is back in the foreground.
     @ObservationIgnored private var inAppBlocked = false
+    /// Paused transfers whose resume data is still being written; they restart only once it's there.
+    @ObservationIgnored private var pendingResumeData: Set<String> = []
     /// Running transfers by key (a transcode has up to `segmentPipeline` segments in flight).
     @ObservationIgnored private var liveTasks: [String: URLSessionTask] = [:]
     /// Bytes received so far by segments in flight, for the progress bar.
@@ -243,6 +245,66 @@ final class DownloadManager: NSObject {
         DownloadActivityController.start()
     }
 
+    /// Pauses a queued or running download. What's been loaded is kept: the transfers in flight are
+    /// cancelled with their resume data, so `resume` continues where it stopped (also after a relaunch).
+    func pause(id: String) {
+        guard let index = records.firstIndex(where: { $0.id == id }), records[index].isActive else { return }
+        records[index].state = .paused
+        records[index].errorMessage = nil
+        records[index].retryAfter = nil
+        speeds[id] = nil
+        speedSamples[id] = nil
+        for key in liveKeys(of: id) {
+            guard let task = liveTasks.removeValue(forKey: key) else { continue }
+            inflightBytes[key] = nil
+            inAppTasks.remove(ObjectIdentifier(task))
+            abandonedTasks.insert(ObjectIdentifier(task))
+            if let download = task as? URLSessionDownloadTask {
+                pendingResumeData.insert(key)
+                download.cancel { data in
+                    if let data { try? data.write(to: Self.resumeDataURL(for: key), options: .atomic) }
+                    Task { @MainActor in
+                        self.pendingResumeData.remove(key)
+                        self.pump()          // resumed meanwhile: it can start now
+                    }
+                }
+            } else {
+                task.cancel()
+            }
+        }
+        if let hls = records[index].hls {
+            records[index].bytesWritten = hls.bytes      // what's on disk; segments in flight count again on resume
+        }
+        saveIndex()
+        DownloadDiagnostics.log("\(id): paused")
+        pump()                                      // the next download in the queue can start
+        DownloadActivityController.refresh(force: true)
+    }
+
+    /// Continues a paused download where it stopped (it joins the queue).
+    func resume(id: String) {
+        guard let index = records.firstIndex(where: { $0.id == id }), records[index].state == .paused else { return }
+        records[index].state = .queued
+        records[index].retryCount = nil
+        records[index].retryAfter = nil
+        saveIndex()
+        DownloadDiagnostics.log("\(id): resumed")
+        DownloadKeepAlive.begin(title: String(localized: "Downloading"), subtitle: records[index].name)
+        pump()
+        DownloadActivityController.start()
+    }
+
+    var hasPausedDownloads: Bool { records.contains { $0.state == .paused } }
+
+    func pauseAll() {
+        for record in records where record.isActive { pause(id: record.id) }
+    }
+
+    /// Resumes paused downloads in the order they were added (the queue starts the oldest first).
+    func resumeAll() {
+        for record in records where record.state == .paused { resume(id: record.id) }
+    }
+
     /// Cancels a running or queued download or removes a finished one (all its files included).
     func delete(id: String) {
         for key in liveKeys(of: id) { liveTasks.removeValue(forKey: key)?.cancel(); inflightBytes[key] = nil }
@@ -400,6 +462,8 @@ final class DownloadManager: NSObject {
         }
         let record = records[index]
         let id = record.id
+        // Just paused and resumed again: wait for the paused transfers' data (see `pause`).
+        guard !pendingResumeData.contains(where: { DownloadPart.parse($0).id == id }) else { return }
         let live = Set(liveKeys(of: id))
         let parts = partsToStart(of: record).filter { !live.contains($0.key(for: id)) }
         if parts.isEmpty {
@@ -802,12 +866,15 @@ final class DownloadManager: NSObject {
         }
         liveTasks[key] = nil
         inflightBytes[key] = nil
-        guard let index = records.firstIndex(where: { $0.id == id }), records[index].isActive else {
+        // A part that finished just as the download was paused is kept; nothing new starts then.
+        guard let index = records.firstIndex(where: { $0.id == id }),
+              records[index].isActive || records[index].state == .paused else {
             try? FileManager.default.removeItem(at: file)
             clearTransient(id)
             pump()
             return
         }
+        let isPaused = records[index].state == .paused
         records[index].errorMessage = nil
         records[index].retryAfter = nil
 
@@ -860,7 +927,7 @@ final class DownloadManager: NSObject {
 
         if nextPart(of: records[index]) != nil || !liveKeys(of: id).isEmpty {
             saveIndex()
-            begin(at: index)                         // next part(s); keeps the pipeline full
+            if !isPaused { begin(at: index) }        // next part(s); keeps the pipeline full
         } else {
             clearTransient(id)
             complete(at: index)

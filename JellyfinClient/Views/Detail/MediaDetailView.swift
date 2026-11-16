@@ -192,7 +192,9 @@ struct MediaDetailView: View {
                 case .completed?:
                     if let record { downloads.play(record, title: target.name, serverResumeSeconds: Ticks.seconds(target.resumeTicks)) }
                 case .downloading?, .queued?:
-                    break
+                    downloads.pause(id: target.id)
+                case .paused?:
+                    downloads.resume(id: target.id)
                 case .failed?:
                     downloads.retry(id: target.id)
                 case nil:
@@ -206,6 +208,10 @@ struct MediaDetailView: View {
                             .progressViewStyle(.circular)
                             .controlSize(.small)
                         Text("Downloading · \(Int((record?.progress ?? 0) * 100)) %")
+                        Image(systemName: "pause.fill").font(.subheadline).foregroundStyle(.secondary)
+                    case .paused?:
+                        Image(systemName: "pause.circle")
+                        Text("Paused · \(Int((record?.progress ?? 0) * 100)) % · Resume")
                     case .queued?:
                         Image(systemName: "clock")
                         Text((record?.retryCount ?? 0) > 0 ? String(localized: "Download Interrupted · Retrying") : String(localized: "Download Queued"))
@@ -527,6 +533,10 @@ struct MediaDetailView: View {
         let record = downloads.record(for: episode.id)
         if record?.state == .completed, let record {
             downloads.play(record, title: episode.name, serverResumeSeconds: Ticks.seconds(episode.resumeTicks))
+        } else if record?.isActive == true {
+            downloads.pause(id: episode.id)
+        } else if record?.state == .paused {
+            downloads.resume(id: episode.id)
         } else if record?.state == .failed {
             downloads.retry(id: episode.id)
         } else if record == nil {
@@ -539,6 +549,7 @@ struct MediaDetailView: View {
         for episode in episodes {
             switch downloads.record(for: episode.id)?.state {
             case .completed?, .downloading?, .queued?: continue
+            case .paused?: downloads.resume(id: episode.id)
             default: downloads.start(item: episode, api: api, mbit: mbit)
             }
         }
@@ -621,6 +632,14 @@ struct EpisodeCell: View {
                 .controlSize(.small)
         case .queued?:
             Image(systemName: "clock").font(.title3).foregroundStyle(.secondary)
+        case .paused?:
+            ZStack {
+                ProgressView(value: record?.progress ?? 0)
+                    .progressViewStyle(.circular)
+                    .controlSize(.small)
+                    .tint(.secondary)
+                Image(systemName: "pause.fill").font(.system(size: 8, weight: .bold)).foregroundStyle(.secondary)
+            }
         case .completed?:
             Image(systemName: "checkmark.circle.fill").font(.title3).foregroundStyle(.tint)
         case .failed?:

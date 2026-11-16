@@ -2331,6 +2331,56 @@
         }
       }
     },
+    "Pause": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pausieren"
+          }
+        }
+      }
+    },
+    "Pause All": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle pausieren"
+          }
+        }
+      }
+    },
+    "Paused": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pausiert"
+          }
+        }
+      }
+    },
+    "Paused · %lld %% · Resume": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pausiert · %lld %% · Fortsetzen"
+          }
+        }
+      }
+    },
+    "Paused · %lld %% · Tap to resume": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pausiert · %lld %% · Zum Fortsetzen tippen"
+          }
+        }
+      }
+    },
     "Pending": {
       "localizations": {
         "de": {
@@ -2737,6 +2787,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ fortsetzen"
+          }
+        }
+      }
+    },
+    "Resume All": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle fortsetzen"
           }
         }
       }

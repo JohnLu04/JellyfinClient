@@ -16,7 +16,9 @@ struct DownloadsView: View {
                         case .failed:
                             downloads.retry(id: record.id)
                         case .queued, .downloading:
-                            break
+                            downloads.pause(id: record.id)
+                        case .paused:
+                            downloads.resume(id: record.id)
                         }
                     } label: {
                         DownloadRow(record: record)
@@ -29,6 +31,17 @@ struct DownloadsView: View {
                         if record.state == .failed {
                             Button { downloads.retry(id: record.id) } label: {
                                 Label("Retry", systemImage: "arrow.clockwise")
+                            }
+                            .tint(.accentColor)
+                        }
+                        if record.isActive {
+                            Button { downloads.pause(id: record.id) } label: {
+                                Label("Pause", systemImage: "pause.fill")
+                            }
+                            .tint(.orange)
+                        } else if record.state == .paused {
+                            Button { downloads.resume(id: record.id) } label: {
+                                Label("Resume", systemImage: "play.fill")
                             }
                             .tint(.accentColor)
                         }
@@ -47,6 +60,13 @@ struct DownloadsView: View {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Download Log", systemImage: "doc.text.magnifyingglass") { showLog = true }
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    if downloads.hasActiveDownloads {
+                        Button("Pause All", systemImage: "pause.circle") { downloads.pauseAll() }
+                    } else if downloads.hasPausedDownloads {
+                        Button("Resume All", systemImage: "play.circle") { downloads.resumeAll() }
+                    }
                 }
             }
             .sheet(isPresented: $showLog) { DownloadLogView() }
@@ -80,6 +100,11 @@ struct DownloadRow: View {
                     Text(record.errorMessage ?? record.extrasProgress.map {
                         String(localized: "Audio tracks & subtitles · \($0.done + 1) of \($0.total)")
                     } ?? progressText)
+                        .font(.caption).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
+                case .paused:
+                    ProgressView(value: record.progress)
+                        .tint(.secondary)
+                    Text("Paused · \(Int(record.progress * 100)) % · Tap to resume")
                         .font(.caption).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
                 case .completed:
                     Text("\(record.qualityLabel) · \(ByteCountFormatter.string(fromByteCount: record.bytesWritten, countStyle: .file))")
@@ -155,8 +180,10 @@ struct DownloadStateIcon: View {
 
     var body: some View {
         switch record.state {
-        case .queued: Image(systemName: "clock").foregroundStyle(.secondary)
-        case .downloading: Image(systemName: "arrow.down.circle").foregroundStyle(.tint)
+        // Running or waiting: a tap pauses. Paused: a tap continues the download.
+        case .queued: Image(systemName: "pause.circle").foregroundStyle(.secondary)
+        case .downloading: Image(systemName: "pause.circle.fill").foregroundStyle(.tint)
+        case .paused: Image(systemName: "arrow.down.circle.fill").foregroundStyle(.orange)
         case .completed: Image(systemName: "play.circle.fill").foregroundStyle(.tint)
         case .failed: Image(systemName: "arrow.clockwise.circle").foregroundStyle(.red)
         }

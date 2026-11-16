@@ -47,7 +47,7 @@ struct HLSProgress: Codable, Equatable {
 }
 
 struct DownloadRecord: Codable, Identifiable, Equatable {
-    enum State: String, Codable { case queued, downloading, completed, failed }
+    enum State: String, Codable { case queued, downloading, paused, completed, failed }
 
     let id: String              // Jellyfin item id
     var name: String
