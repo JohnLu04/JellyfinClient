@@ -146,6 +146,7 @@ struct BaseItem: Decodable, Identifiable, Hashable {
     let seriesName: String?
     let seriesId: String?
     let seasonId: String?
+    var seasonName: String? = nil
     let indexNumber: Int?
     let parentIndexNumber: Int?
     let imageTags: [String: String]?

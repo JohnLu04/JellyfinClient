@@ -51,6 +51,16 @@
         }
       }
     },
+    "%@ – the downloaded files are removed from this iPhone.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ – die heruntergeladenen Dateien werden von diesem iPhone entfernt."
+          }
+        }
+      }
+    },
     "%lld": {
       "localizations": {
         "de": {
@@ -77,6 +87,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld Folgen"
+          }
+        }
+      }
+    },
+    "%lld failed": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld fehlgeschlagen"
           }
         }
       }
@@ -131,6 +151,16 @@
         }
       }
     },
+    "%lld paused": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld pausiert"
+          }
+        }
+      }
+    },
     "%lld s": {
       "localizations": {
         "de": {
@@ -147,6 +177,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld Untertitel"
+          }
+        }
+      }
+    },
+    "%lld waiting": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld warten"
           }
         }
       }
@@ -187,6 +227,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "1 Staffel"
+          }
+        }
+      }
+    },
+    "1 episode": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "1 Folge"
           }
         }
       }
@@ -981,6 +1031,16 @@
         }
       }
     },
+    "Delete All": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle löschen"
+          }
+        }
+      }
+    },
     "Delete Download": {
       "localizations": {
         "de": {
@@ -997,6 +1057,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Anfrage löschen"
+          }
+        }
+      }
+    },
+    "Delete all %lld episodes?": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alle %lld Folgen löschen?"
+          }
+        }
+      }
+    },
+    "Delete this episode?": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diese Folge löschen?"
           }
         }
       }
@@ -1797,6 +1877,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Miniserie"
+          }
+        }
+      }
+    },
+    "Loading %@ · %lld %%": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lädt %1$@ · %2$lld %%"
           }
         }
       }

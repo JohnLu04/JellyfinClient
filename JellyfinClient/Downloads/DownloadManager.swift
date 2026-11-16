@@ -42,6 +42,8 @@ final class DownloadManager: NSObject {
     private(set) var records: [DownloadRecord] = []
     /// Current transfer speed in bytes per second, by item id.
     private(set) var speeds: [String: Double] = [:]
+    /// Bumped when a series poster was saved, so the download folders show it.
+    private(set) var posterRevision = 0
 
     /// Handed over by the app delegate when iOS wakes the app for this session; called once all
     /// pending events are delivered.
@@ -211,6 +213,39 @@ final class DownloadManager: NSObject {
         record.posterFileName.map { Self.directory.appendingPathComponent($0) }
     }
 
+    /// The series poster for a series folder in the download list (saved with its first episode).
+    func seriesPosterURL(seriesId: String) -> URL? {
+        let url = Self.seriesPosterURL(seriesId)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    private static func seriesPosterURL(_ seriesId: String) -> URL {
+        directory.appendingPathComponent("series-\(seriesId)-poster.jpg")
+    }
+
+    /// Saves the series poster once, for the series' folder.
+    private func saveSeriesPoster(for item: BaseItem, api: JellyfinAPI) async {
+        guard item.type == "Episode", let seriesId = item.seriesId else { return }
+        let destination = Self.seriesPosterURL(seriesId)
+        guard !FileManager.default.fileExists(atPath: destination.path) else { return }
+        let url = api.imageURL(itemId: seriesId, type: "Primary", tag: item.seriesPrimaryImageTag, maxWidth: 300)
+        guard let (data, response) = try? await URLSession.shared.data(from: url),
+              (response as? HTTPURLResponse)?.statusCode == 200, UIImage(data: data) != nil else { return }
+        try? data.write(to: destination, options: .atomic)
+        posterRevision += 1
+    }
+
+    /// Copies series and season of an episode into its download, for the folders in the download list.
+    private func setEpisodeInfo(at index: Int, from item: BaseItem) {
+        guard item.type == "Episode" else { return }
+        records[index].seriesId = item.seriesId
+        records[index].seriesName = item.seriesName ?? records[index].episodeInfo?.series
+        records[index].seasonId = item.seasonId
+        records[index].seasonName = item.seasonName
+        records[index].seasonNumber = item.parentIndexNumber
+        records[index].episodeNumber = item.indexNumber
+    }
+
     var totalBytes: Int64 {
         records.filter { $0.state == .completed }.reduce(0) { $0 + $1.bytesWritten }
     }
@@ -266,11 +301,15 @@ final class DownloadManager: NSObject {
         record.mainAudioTitle = mainAudio.flatMap { index in source?.audioStreams.first { $0.index == index }?.label }
         record.extras = extras.isEmpty ? nil : extras
         records.insert(record, at: 0)
+        setEpisodeInfo(at: 0, from: item)
         saveIndex()
         DownloadDiagnostics.log("\(item.id): queued \(item.name ?? "") (\(record.qualityLabel)) with \(extras.filter { $0.kind == .audio }.count) extra audio track(s), \(extras.filter { $0.kind == .subtitle }.count) subtitle(s)")
 
         let posters = Self.posterCandidates(for: item, api: api)
-        Task { await savePoster(from: posters, itemId: item.id) }
+        Task {
+            await savePoster(from: posters, itemId: item.id)
+            await saveSeriesPoster(for: item, api: api)
+        }
         DownloadNotifications.requestAuthorizationIfNeeded()
         // Started from the foreground: the only moment iOS lets us ask to keep running afterwards.
         DownloadKeepAlive.begin(title: String(localized: "Downloading"), subtitle: item.name ?? "")
@@ -362,7 +401,10 @@ final class DownloadManager: NSObject {
             try? fileManager.removeItem(at: Self.directory.appendingPathComponent(name))
         }
         guard let index = records.firstIndex(where: { $0.id == id }) else { return }
-        records.remove(at: index)
+        let removed = records.remove(at: index)
+        if let seriesId = removed.seriesId, !records.contains(where: { $0.seriesId == seriesId }) {
+            try? fileManager.removeItem(at: Self.seriesPosterURL(seriesId))
+        }
         saveIndex()
         pump()
         DownloadActivityController.refresh(force: true)
@@ -463,7 +505,7 @@ final class DownloadManager: NSObject {
         isReconnected = true
         pump()
         DownloadActivityController.appLaunched()
-        refreshEpisodePosters()
+        refreshEpisodeInfo()
         if eventsDelivered { callBackgroundCompletion() }
     }
 
@@ -1526,8 +1568,13 @@ final class DownloadManager: NSObject {
 
     /// Episodes downloaded before season/series posters were used still show the episode still:
     /// fetch the right poster once (when the server is reachable; otherwise next launch).
-    private func refreshEpisodePosters() {
-        let pending = records.filter { $0.subtitle != nil && $0.posterSource == nil }.map(\.id)
+    private func refreshEpisodeInfo() {
+        // Episodes without the season/series poster or without series and season (downloaded before
+        // those were stored), and series folders still without their poster.
+        let pending = records.filter {
+            $0.subtitle != nil && ($0.posterSource == nil || $0.seriesName == nil
+                || ($0.seriesId.map { !FileManager.default.fileExists(atPath: Self.seriesPosterURL($0).path) } ?? false))
+        }.map(\.id)
         guard !pending.isEmpty, let stored = SessionStorage.load() else { return }
         let api = JellyfinAPI(session: stored)
         Task {
@@ -1537,7 +1584,14 @@ final class DownloadManager: NSObject {
                     if let index = records.firstIndex(where: { $0.id == id }) { records[index].posterSource = "item"; saveIndex() }
                     continue
                 }
-                await savePoster(from: Self.posterCandidates(for: item, api: api), itemId: id)
+                if let index = records.firstIndex(where: { $0.id == id }), records[index].seriesName == nil {
+                    setEpisodeInfo(at: index, from: item)
+                    saveIndex()
+                }
+                if records.first(where: { $0.id == id })?.posterSource == nil {
+                    await savePoster(from: Self.posterCandidates(for: item, api: api), itemId: id)
+                }
+                await saveSeriesPoster(for: item, api: api)
             }
         }
     }

@@ -56,6 +56,14 @@ struct DownloadRecord: Codable, Identifiable, Equatable {
     let id: String              // Jellyfin item id
     var name: String
     var subtitle: String?       // series name + episode label
+    /// Episodes: the series and season they belong to, for the folders in the download list.
+    /// Downloads from before this are filled in from the server (see `DownloadManager`).
+    var seriesId: String? = nil
+    var seriesName: String? = nil
+    var seasonId: String? = nil
+    var seasonName: String? = nil
+    var seasonNumber: Int? = nil
+    var episodeNumber: Int? = nil
     var runTimeTicks: Int64?
     var mbit: Double?           // nil = original file
     var mediaSourceId: String?
@@ -118,6 +126,32 @@ struct DownloadRecord: Codable, Identifiable, Equatable {
 
     var qualityLabel: String {
         mbit.map { Bitrate.label($0) } ?? String(localized: "Original")
+    }
+
+    /// An episode: series name, season and episode number, also for downloads from before these were
+    /// stored ("Series · S1 · E2" in `subtitle`).
+    var episodeInfo: (series: String, season: Int?, episode: Int?)? {
+        if let seriesName { return (seriesName, seasonNumber, episodeNumber) }
+        guard var parts = subtitle?.components(separatedBy: " · "), parts.count >= 2 else { return nil }
+        func number(_ prefix: Character) -> Int? {
+            guard let last = parts.last, last.first == prefix, let value = Int(last.dropFirst()) else { return nil }
+            parts.removeLast()
+            return value
+        }
+        let episode = number("E")
+        guard episode != nil else { return nil }
+        let season = number("S")
+        let series = parts.joined(separator: " · ")
+        return series.isEmpty ? nil : (series, season, episode)
+    }
+
+    /// Groups the episodes of one series / one season in the download list. By name, so downloads
+    /// from before the ids were stored land in the same folder.
+    var seriesKey: String? { episodeInfo?.series }
+
+    var seasonKey: String? {
+        guard let info = episodeInfo else { return nil }
+        return info.season.map { "s\($0)" } ?? seasonName ?? "-"
     }
 
     /// Queued or transferring: the manager still owns it.
