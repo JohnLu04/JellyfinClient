@@ -86,6 +86,25 @@ struct DownloadRecord: Codable, Identifiable, Equatable {
     var extras: [DownloadExtra]?
     /// Transcoded downloads: how far the segmented video has come.
     var hls: HLSProgress?
+    /// The extra audio track loading now (after the video): progress, bytes and expected size.
+    var audioProgress: Double? = nil
+    var audioBytesWritten: Int64? = nil
+    var audioExpectedBytes: Int64? = nil
+
+    /// The video is done and an extra audio track is loading: which one ("1 of 2") and its name.
+    var audioPhase: (number: Int, total: Int, extra: DownloadExtra)? {
+        guard fileName != nil, let extras, let n = nextExtraIndex, extras[n].kind == .audio else { return nil }
+        let audio = extras.indices.filter { extras[$0].kind == .audio }
+        return ((audio.firstIndex(of: n) ?? 0) + 1, audio.count, extras[n])
+    }
+
+    /// What the progress bars show: the video, or the audio track loading after it.
+    var displayProgress: Double {
+        guard let phase = audioPhase else { return progress }
+        if let audioProgress { return audioProgress }
+        if let hls = phase.extra.hls, hls.segmentCount > 0 { return Double(hls.nextSegment) / Double(hls.segmentCount) }
+        return 0
+    }
 
     /// The next extra file to load, once the video is done.
     var nextExtraIndex: Int? { extras?.firstIndex { $0.isPending } }

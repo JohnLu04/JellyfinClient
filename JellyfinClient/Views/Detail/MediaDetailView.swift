@@ -204,14 +204,18 @@ struct MediaDetailView: View {
                 HStack(spacing: 10) {
                     switch record?.state {
                     case .downloading?:
-                        ProgressView(value: record?.progress ?? 0)
+                        ProgressView(value: record?.displayProgress ?? 0)
                             .progressViewStyle(.circular)
                             .controlSize(.small)
-                        Text("Downloading · \(Int((record?.progress ?? 0) * 100)) %")
+                        if record?.audioPhase != nil {
+                            Text("Downloading audio track · \(Int((record?.displayProgress ?? 0) * 100)) %")
+                        } else {
+                            Text("Downloading · \(Int((record?.progress ?? 0) * 100)) %")
+                        }
                         Image(systemName: "pause.fill").font(.subheadline).foregroundStyle(.secondary)
                     case .paused?:
                         Image(systemName: "pause.circle")
-                        Text("Paused · \(Int((record?.progress ?? 0) * 100)) % · Resume")
+                        Text("Paused · \(Int((record?.displayProgress ?? 0) * 100)) % · Resume")
                     case .queued?:
                         Image(systemName: "clock")
                         Text((record?.retryCount ?? 0) > 0 ? String(localized: "Download Interrupted · Retrying") : String(localized: "Download Queued"))
@@ -627,14 +631,14 @@ struct EpisodeCell: View {
     private var downloadIcon: some View {
         switch record?.state {
         case .downloading?:
-            ProgressView(value: record?.progress ?? 0)
+            ProgressView(value: record?.displayProgress ?? 0)
                 .progressViewStyle(.circular)
                 .controlSize(.small)
         case .queued?:
             Image(systemName: "clock").font(.title3).foregroundStyle(.secondary)
         case .paused?:
             ZStack {
-                ProgressView(value: record?.progress ?? 0)
+                ProgressView(value: record?.displayProgress ?? 0)
                     .progressViewStyle(.circular)
                     .controlSize(.small)
                     .tint(.secondary)

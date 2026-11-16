@@ -185,19 +185,27 @@ enum DownloadActivityController {
 
         let phase: State.Phase
         let status: String
+        let audio = record.audioPhase
         if record.state == .downloading, record.errorMessage == nil {
             phase = .downloading
-            status = record.fileName == nil
-                ? String(localized: "Downloading now")
-                : String(localized: "Loading audio tracks & subtitles")
+            if record.fileName == nil {
+                status = String(localized: "Downloading now")
+            } else if let audio {
+                status = audio.total > 1 ? String(localized: "Loading audio track \(audio.number) of \(audio.total)")
+                                         : String(localized: "Loading audio track")
+            } else {
+                status = String(localized: "Loading audio tracks & subtitles")
+            }
         } else {
             phase = .waiting
             status = record.errorMessage != nil ? String(localized: "Retrying shortly") : String(localized: "Queued")
         }
         let subtitle = [record.subtitle, record.qualityLabel].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
         return State(itemId: record.id, title: record.name, subtitle: subtitle.isEmpty ? nil : subtitle,
-                     status: status, phase: phase, progress: record.progress, bytesWritten: record.bytesWritten,
-                     totalBytes: record.expectedBytes, bytesPerSecond: record.fileName == nil ? manager.speeds[record.id].map { ($0 / 1024).rounded() * 1024 } : nil,
+                     status: status, phase: phase, progress: record.displayProgress,
+                     bytesWritten: audio != nil ? (record.audioBytesWritten ?? 0) : record.bytesWritten,
+                     totalBytes: audio != nil ? record.audioExpectedBytes.map { max($0, record.audioBytesWritten ?? 0) } : record.expectedBytes,
+                     bytesPerSecond: record.fileName == nil || audio != nil ? manager.speeds[record.id].map { ($0 / 1024).rounded() * 1024 } : nil,
                      queued: active.count - 1, poster: poster(for: record))
     }
 

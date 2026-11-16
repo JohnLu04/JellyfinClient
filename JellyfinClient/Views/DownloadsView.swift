@@ -91,20 +91,26 @@ struct DownloadRow: View {
                 Text(record.name).font(.headline).lineLimit(2)
                 switch record.state {
                 case .queued:
-                    ProgressView(value: record.progress)
+                    ProgressView(value: record.displayProgress)
                         .tint(.secondary)
                     Text(record.errorMessage ?? String(localized: "Waiting…"))
                         .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 case .downloading:
-                    ProgressView(value: record.progress)
-                    Text(record.errorMessage ?? record.extrasProgress.map {
+                    ProgressView(value: record.displayProgress)
+                    if let title = audioTitleText {
+                        Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    Text(record.errorMessage ?? audioProgressText ?? record.extrasProgress.map {
                         String(localized: "Audio tracks & subtitles · \($0.done + 1) of \($0.total)")
                     } ?? progressText)
                         .font(.caption).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
                 case .paused:
-                    ProgressView(value: record.progress)
+                    ProgressView(value: record.displayProgress)
                         .tint(.secondary)
-                    Text("Paused · \(Int(record.progress * 100)) % · Tap to resume")
+                    if let title = audioTitleText {
+                        Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                    Text("Paused · \(Int(record.displayProgress * 100)) % · Tap to resume")
                         .font(.caption).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
                 case .completed:
                     Text("\(record.qualityLabel) · \(ByteCountFormatter.string(fromByteCount: record.bytesWritten, countStyle: .file))")
@@ -140,6 +146,32 @@ struct DownloadRow: View {
         let written = ByteCountFormatter.string(fromByteCount: record.bytesWritten, countStyle: .file)
         if let expected = record.expectedBytes, expected > 0 {
             let total = ByteCountFormatter.string(fromByteCount: expected, countStyle: .file)
+            parts.append(String(localized: "\(written) of \(total)"))
+        } else {
+            parts.append(written)
+        }
+        if let speed = downloads.speeds[record.id], speed > 0 {
+            parts.append("\(ByteCountFormatter.string(fromByteCount: Int64(speed), countStyle: .file))/s")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// "Audio track 1 of 2 · German" while an extra audio track loads after the video.
+    private var audioTitleText: String? {
+        guard let phase = record.audioPhase else { return nil }
+        var parts = [phase.total > 1 ? String(localized: "Audio track \(phase.number) of \(phase.total)") : String(localized: "Audio track")]
+        // "Deutsch - AAC - Stereo" → "Deutsch"
+        if let name = phase.extra.title.components(separatedBy: " - ").first, !name.isEmpty { parts.append(name) }
+        return parts.joined(separator: " · ")
+    }
+
+    /// "1.2 MB of 5.6 MB · 300 KB/s" for the audio track that's loading.
+    private var audioProgressText: String? {
+        guard record.audioPhase != nil else { return nil }
+        var parts: [String] = []
+        let written = ByteCountFormatter.string(fromByteCount: record.audioBytesWritten ?? 0, countStyle: .file)
+        if let expected = record.audioExpectedBytes, expected > 0 {
+            let total = ByteCountFormatter.string(fromByteCount: max(expected, record.audioBytesWritten ?? 0), countStyle: .file)
             parts.append(String(localized: "\(written) of \(total)"))
         } else {
             parts.append(written)

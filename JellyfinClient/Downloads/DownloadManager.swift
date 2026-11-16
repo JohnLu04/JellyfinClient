@@ -872,6 +872,7 @@ final class DownloadManager: NSObject {
         try? FileManager.default.removeItem(at: Self.hlsListURL(for: id, target))
         if case .extra(let n) = target {
             records[index].extras?[n].fileName = final
+            clearAudioProgress(at: index)
             DownloadDiagnostics.log("\(id): \(label(target, records[index]))assembled from \(hls.segmentCount) segments (\(hls.bytes) bytes)")
             return
         }
@@ -938,9 +939,12 @@ final class DownloadManager: NSObject {
         if records[index].errorMessage != nil { records[index].errorMessage = nil }     // data is flowing again
         switch part {
         case .extraInit, .extraSegment:
-            // Extra files: only the "x of y" count is shown, but the keep-alive needs to see progress.
+            // An extra audio track: its own progress bar, like the video's.
             inflightBytes[key] = (written, expected)
+            if let n = part.extraIndex { updateAudioProgress(at: index, n) }
+            updateSpeed(id: id, bytes: records[index].audioBytesWritten ?? 0)
             reportKeepAliveProgress(of: records[index])
+            if Date.now.timeIntervalSince(lastIndexSave) > 10 { saveIndex() }
             return
         case .extra, .extraPlaylist:
             reportKeepAliveProgress(of: records[index])
@@ -964,19 +968,55 @@ final class DownloadManager: NSObject {
             records[index].retryCount = 0
         }
 
+        updateSpeed(id: id, bytes: bytes)
+        reportKeepAliveProgress(of: records[index])
+        if Date.now.timeIntervalSince(lastIndexSave) > 10 { saveIndex() }
+    }
+
+    /// The transfer speed, smoothed. `bytes` counts what the current file (video or audio track) has so far.
+    private func updateSpeed(id: String, bytes: Int64) {
         let now = Date.now
-        if let sample = speedSamples[id] {
+        if let sample = speedSamples[id], bytes >= sample.bytes {
             let elapsed = now.timeIntervalSince(sample.time)
             if elapsed >= 1 {
-                let current = Double(max(0, bytes - sample.bytes)) / elapsed
+                let current = Double(bytes - sample.bytes) / elapsed
                 speeds[id] = speeds[id].map { $0 * 0.6 + current * 0.4 } ?? current
                 speedSamples[id] = (now, bytes)
             }
         } else {
-            speedSamples[id] = (now, bytes)
+            speedSamples[id] = (now, bytes)     // first sample, or the next file started
         }
-        reportKeepAliveProgress(of: records[index])
-        if now.timeIntervalSince(lastIndexSave) > 10 { saveIndex() }
+    }
+
+    /// Estimated size of an extra audio track: audio plus the tiny picture (see audioTrackHLSPlaylistURL).
+    private static func estimatedTrackBytes(_ record: DownloadRecord) -> Int64 {
+        guard let mbit = record.mbit else { return 0 }
+        let seconds = Double(record.runTimeTicks ?? 0) / 10_000_000
+        return Int64(Double(JellyfinAPI.downloadAudioBitrate(forMbit: mbit) + 60_000) / 8 * seconds)
+    }
+
+    /// Progress bar of the extra audio track that's loading: appended segments plus the ones in flight.
+    private func updateAudioProgress(at index: Int, _ n: Int) {
+        let record = records[index]
+        guard record.extras?.indices.contains(n) == true, let hls = record.extras?[n].hls, hls.segmentCount > 0 else { return }
+        let inflight = inflightBytes.filter { entry in
+            let (id, part) = DownloadPart.parse(entry.key)
+            return id == record.id && part.hlsTarget == .extra(n) && part.segmentNumber != nil
+        }.values
+        let fraction = inflight.reduce(0.0) { $0 + ($1.expected > 0 ? Double($1.written) / Double($1.expected) : 0) }
+        records[index].audioBytesWritten = hls.bytes + inflight.reduce(0) { $0 + $1.written }
+        records[index].audioProgress = min(0.99, (Double(hls.nextSegment) + fraction) / Double(hls.segmentCount))
+        // From the bitrate at first, then from the segments that are there (the last one is shorter).
+        records[index].audioExpectedBytes = hls.nextSegment >= 2
+            ? Int64(Double(hls.bytes) / Double(hls.nextSegment) * Double(hls.segmentCount))
+            : Self.estimatedTrackBytes(record)
+    }
+
+    private func clearAudioProgress(at index: Int) {
+        records[index].audioProgress = nil
+        records[index].audioBytesWritten = nil
+        records[index].audioExpectedBytes = nil
+        speedSamples[records[index].id] = nil
     }
 
     /// iOS ends the keep-alive when its progress stops moving, so it follows the whole download: the
@@ -988,10 +1028,8 @@ final class DownloadManager: NSObject {
         var parts: [(weight: Double, done: Double)] = [
             (Double(max(videoBytes, 1)), record.fileName != nil ? 1 : record.progress),
         ]
-        if let mbit = record.mbit, let extras = record.extras {
-            let seconds = Double(record.runTimeTicks ?? 0) / 10_000_000
-            // Audio plus the tiny picture (see audioTrackHLSPlaylistURL).
-            let trackBytes = max(Double(JellyfinAPI.downloadAudioBitrate(forMbit: mbit) + 60_000) / 8 * seconds, 1)
+        if record.mbit != nil, let extras = record.extras {
+            let trackBytes = Double(max(Self.estimatedTrackBytes(record), 1))
             for n in extras.indices where extras[n].kind == .audio {
                 let done: Double
                 if extras[n].fileName != nil || extras[n].skipped == true {
@@ -1076,8 +1114,9 @@ final class DownloadManager: NSObject {
                 }
             }
             // Data gets through: interruptions before don't count against the retries any more.
-            if target != .video {
+            if case .extra(let n) = target {
                 records[index].retryCount = nil
+                updateAudioProgress(at: index, n)
                 reportKeepAliveProgress(of: records[index])
             }
             if hlsIsComplete(records[index], target) {
@@ -1131,6 +1170,7 @@ final class DownloadManager: NSObject {
     private func skipExtra(at index: Int, extra: Int, reason: String) {
         let id = records[index].id
         records[index].extras?[extra].skipped = true
+        clearAudioProgress(at: index)
         if extraUsesHLS(records[index], extra) {
             try? FileManager.default.removeItem(at: Self.hlsListURL(for: id, .extra(extra)))
             try? FileManager.default.removeItem(at: Self.hlsOutputURL(for: id, .extra(extra)))

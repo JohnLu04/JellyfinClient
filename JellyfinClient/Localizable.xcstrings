@@ -431,6 +431,26 @@
         }
       }
     },
+    "Audio track": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tonspur"
+          }
+        }
+      }
+    },
+    "Audio track %lld of %lld": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tonspur %1$lld von %2$lld"
+          }
+        }
+      }
+    },
     "Audio tracks & subtitles · %lld of %lld": {
       "localizations": {
         "de": {
@@ -1221,6 +1241,16 @@
         }
       }
     },
+    "Downloading audio track · %lld %%": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tonspur wird geladen · %lld %%"
+          }
+        }
+      }
+    },
     "Downloading now": {
       "localizations": {
         "de": {
@@ -1757,6 +1787,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Miniserie"
+          }
+        }
+      }
+    },
+    "Loading audio track": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lädt Tonspur"
+          }
+        }
+      }
+    },
+    "Loading audio track %lld of %lld": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lädt Tonspur %1$lld von %2$lld"
           }
         }
       }
