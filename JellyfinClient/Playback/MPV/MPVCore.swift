@@ -50,11 +50,14 @@ final class MPVCore: @unchecked Sendable {
         return rawHandle
     }
 
+    /// Also restored after the background (see MPVPlayerController).
+    static let hardwareDecoding = "videotoolbox"
+
     private static let options: [(String, String)] = [
         ("vo", "gpu-next"),
         ("gpu-api", "vulkan"),
         ("gpu-context", "moltenvk"),
-        ("hwdec", "videotoolbox"),
+        ("hwdec", hardwareDecoding),
         // mpv's iOS audio output sets the audio session to "mix with others" unless it plays exclusively.
         // A mixing app can't be the Now Playing app, so the Lock Screen / Control Center player wouldn't
         // work; it also didn't pause other apps' audio the way a video player should.

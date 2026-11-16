@@ -85,6 +85,8 @@ final class MPVPlayerController: PlaybackEngine {
     @ObservationIgnored private let embeddedAudioTitle: String?
     @ObservationIgnored private var didAddOfflineTracks = false
     @ObservationIgnored private var lifecycleObservers: [NSObjectProtocol] = []
+    /// Whether the hardware decoder was in use when the app went to the background (see observeLifecycle).
+    @ObservationIgnored private var hardwareDecoderBeforeBackground: String?
     /// Automatic quality: tells the adaptive stream how much is buffered, every second.
     @ObservationIgnored private var bufferReporter: Task<Void, Never>?
 
@@ -523,7 +525,7 @@ final class MPVPlayerController: PlaybackEngine {
             return (at, by)
         }
         Task { [weak self] in
-            for second in 1...90 {
+            for second in 1...150 {
                 try? await Task.sleep(for: .seconds(1))
                 guard let self else { return }
                 if ProcessInfo.processInfo.environment["JF_DEBUG_PAUSE"] != nil, second == 8 || second == 12 {
@@ -543,7 +545,7 @@ final class MPVPlayerController: PlaybackEngine {
                     print("[MPVDebug] skip \(step.1)")
                     self.skip(by: step.1)
                 }
-                print("[MPVDebug] t=\(second) position=\(String(format: "%.1f", self.position)) duration=\(String(format: "%.1f", self.duration)) quality=\(self.currentQuality ?? -99) switching=\(self.isSwitching) screenOn=\(UIApplication.shared.isIdleTimerDisabled) mpv=\(self.core?.getString("time-pos") ?? "nil")")
+                print("[MPVDebug] t=\(second) position=\(String(format: "%.1f", self.position)) duration=\(String(format: "%.1f", self.duration)) quality=\(self.currentQuality ?? -99) switching=\(self.isSwitching) cache=\(self.core?.getString("demuxer-cache-duration").flatMap(Double.init).map { String(format: "%.0f", $0) } ?? "-") vid=\(self.core?.getString("vid") ?? "-") vo=\(self.core?.getString("current-vo") ?? "-") hw=\(self.core?.getString("hwdec-current") ?? "-") mpv=\(self.core?.getString("time-pos") ?? "nil")")
             }
         }
     }
@@ -557,14 +559,33 @@ final class MPVPlayerController: PlaybackEngine {
 
     // MARK: - Background
 
+    /// The screen goes off or the app to the background: the sound plays on, the picture can't be drawn
+    /// (no GPU in the background). The video track stays selected, so mpv keeps buffering video and audio
+    /// and continues seamlessly on return; only the output is swapped for a null one. Switching the track
+    /// off instead (`vid=no`) made mpv buffer audio only and throw the buffer away to load the picture
+    /// again when the screen came back on.
+    ///
+    /// Should the hardware decoder fail in the background, mpv falls back to software decoding by itself
+    /// (`hwdec-software-fallback`); it's brought back on return.
     private func observeLifecycle() {
         let center = NotificationCenter.default
-        // Rendering into a hidden layer can leave a black picture after returning; pause video output instead.
         lifecycleObservers.append(center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.core?.setString("vid", "no") }
+            MainActor.assumeIsolated {
+                guard let self, let core = self.core else { return }
+                self.hardwareDecoderBeforeBackground = core.getString("hwdec-current")
+                core.setString("vo", "null")
+            }
         })
         lifecycleObservers.append(center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.core?.setString("vid", "auto") }
+            MainActor.assumeIsolated {
+                guard let self, let core = self.core else { return }
+                core.setString("vo", "gpu-next")
+                if let before = self.hardwareDecoderBeforeBackground, before != "no", core.getString("hwdec-current") == "no" {
+                    core.setString("hwdec", "no")
+                    core.setString("hwdec", MPVCore.hardwareDecoding)
+                }
+                self.hardwareDecoderBeforeBackground = nil
+            }
         })
     }
 }
