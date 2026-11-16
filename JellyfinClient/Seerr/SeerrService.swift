@@ -314,7 +314,8 @@ struct DiscoverPage: Sendable {
 
 struct SeerrSearchResult: Decodable, Sendable {
     let id: Int
-    let mediaType: String
+    /// Missing in some lists (recommendations of one title); the caller knows the type then.
+    let mediaType: String?
     let title: String?
     let name: String?
     let posterPath: String?
@@ -599,9 +600,23 @@ struct SeerrClient: Sendable {
         return SeerrNetwork(id: network.id, name: network.name, logoURL: logo)
     }
 
-    private func discoverItems(from page: SeerrSearchPage) -> [DiscoverItem] {
+    /// Titles Seerr (TMDB) recommends for this movie or series, topped up with "similar" titles when
+    /// there are few recommendations. The title itself is left out.
+    func similarTitles(_ type: SeerrMediaType, tmdbID: Int, limit: Int = 18) async throws -> [DiscoverItem] {
+        let base = "/api/v1/\(type.rawValue)/\(tmdbID)"
+        let recommended: SeerrSearchPage = try await get(base + "/recommendations", query: [("page", "1")])
+        var items = discoverItems(from: recommended, defaultType: type)
+        if items.count < 8, let similar: SeerrSearchPage = try? await get(base + "/similar", query: [("page", "1")]) {
+            let known = Set(items.map(\.id))
+            items += discoverItems(from: similar, defaultType: type).filter { !known.contains($0.id) }
+        }
+        return Array(items.filter { $0.tmdbID != tmdbID || $0.mediaType != type }.prefix(limit))
+    }
+
+    private func discoverItems(from page: SeerrSearchPage, defaultType: SeerrMediaType? = nil) -> [DiscoverItem] {
         page.results.compactMap { result in
-            guard let type = SeerrMediaType(rawValue: result.mediaType) else { return nil } // skips people
+            // Skips people (and anything else that isn't a movie or series).
+            guard let type = result.mediaType.map({ SeerrMediaType(rawValue: $0) }) ?? defaultType else { return nil }
             return DiscoverItem(
                 tmdbID: result.id,
                 mediaType: type,

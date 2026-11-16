@@ -5,6 +5,7 @@ import SwiftUI
 struct MediaDetailView: View {
     @Environment(AppModel.self) private var app
     @Environment(DownloadManager.self) private var downloads
+    @Environment(SeerrStore.self) private var seerr
     @AppStorage(SettingsKeys.downloadMbit) private var defaultDownloadMbit = 4.0
 
     @State private var item: BaseItem
@@ -19,7 +20,12 @@ struct MediaDetailView: View {
     @State private var episodes: [BaseItem] = []
     @State private var nextEpisode: BaseItem?
 
+    /// "More Like This": titles Seerr recommends (library or not); Jellyfin's own suggestions only
+    /// when Seerr isn't connected or has nothing.
+    @State private var seerrSimilar: [DiscoverItem] = []
     @State private var similar: [BaseItem] = []
+    @State private var openLibraryItem: BaseItem?
+    @State private var openSeerrItem: DiscoverItem?
     @State private var tab: Tab = .episodes
     @State private var overviewExpanded = false
     @State private var castExpanded = false
@@ -58,7 +64,7 @@ struct MediaDetailView: View {
                         overview
                         credits
                         actionRow
-                        if isSeries || !similar.isEmpty { tabs }
+                        if isSeries || hasSimilar { tabs }
                     }
                     .padding(.horizontal)
                     .padding(.top, 14)
@@ -68,6 +74,9 @@ struct MediaDetailView: View {
             .ignoresSafeArea(edges: .top)
         }
         .toolbarBackground(.hidden, for: .navigationBar)
+        // "More Like This" from Seerr: per-page destinations, so they work in every tab's navigation stack.
+        .navigationDestination(item: $openLibraryItem) { ItemRouter(item: $0) }
+        .navigationDestination(item: $openSeerrItem) { SeerrTitleDetailView(item: $0) }
         .navigationBarTitleDisplayMode(.inline)
         .task { await refresh() }
         .task(id: selectedSeasonId) { await loadEpisodes() }
@@ -324,7 +333,7 @@ struct MediaDetailView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 28) {
                 if isSeries { tabButton("Episodes", .episodes) }
-                if !similar.isEmpty { tabButton("More Like This", .similar) }
+                if hasSimilar { tabButton("More Like This", .similar) }
             }
             .padding(.top, 4)
 
@@ -389,12 +398,51 @@ struct MediaDetailView: View {
         }
     }
 
+    private var hasSimilar: Bool { !seerrSimilar.isEmpty || !similar.isEmpty }
+
+    @ViewBuilder
     private var similarGrid: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 14) {
-            ForEach(similar) { other in
-                NavigationLink(value: other) { PosterCard(item: other) }
-                    .buttonStyle(.plain)
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), alignment: .leading, spacing: 14) {
+            if !seerrSimilar.isEmpty {
+                ForEach(seerrSimilar) { other in
+                    Button { openSimilar(other) } label: { HomeDiscoverCard(item: other, width: nil) }
+                        .buttonStyle(.plain)
+                }
+            } else {
+                ForEach(similar) { other in
+                    NavigationLink(value: other) { PosterCard(item: other) }
+                        .buttonStyle(.plain)
+                }
             }
+        }
+    }
+
+    /// In the library: its page here. Otherwise Seerr's page, to request it.
+    private func openSimilar(_ other: DiscoverItem) {
+        guard other.state == .available || other.state == .partiallyAvailable, let api = app.api else {
+            openSeerrItem = other
+            return
+        }
+        Task {
+            if let libraryItem = await api.libraryItem(tmdbID: other.tmdbID, title: other.title, isSeries: other.mediaType == .tv) {
+                openLibraryItem = libraryItem
+            } else {
+                openSeerrItem = other
+            }
+        }
+    }
+
+    /// Seerr's suggestions for this movie or series (for an episode: its series).
+    private func loadSeerrSimilar(api: JellyfinAPI) async {
+        guard seerrSimilar.isEmpty, let client = seerr.client else { return }
+        var source = item
+        if item.type == "Episode", let seriesId = item.seriesId, let series = try? await api.item(id: seriesId) {
+            source = series
+        }
+        guard let tmdb = source.providerID("Tmdb").flatMap(Int.init) else { return }
+        let type: SeerrMediaType = source.type == "Series" ? .tv : .movie
+        if let items = try? await client.similarTitles(type, tmdbID: tmdb), !items.isEmpty {
+            seerrSimilar = items
         }
     }
 
@@ -429,7 +477,8 @@ struct MediaDetailView: View {
                     ?? loadedSeasons.first?.id
             }
         }
-        if similar.isEmpty {
+        await loadSeerrSimilar(api: api)
+        if seerrSimilar.isEmpty, similar.isEmpty {
             similar = (try? await api.similar(itemId: isSeries || item.type == "Movie" ? item.id : (item.seriesId ?? item.id))) ?? []
         }
     }

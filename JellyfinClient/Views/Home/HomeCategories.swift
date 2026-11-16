@@ -308,8 +308,10 @@ enum HomeLayout {
 }
 
 /// Poster and title of a TMDB title; a green dot when it's in the library.
-private struct HomeDiscoverCard: View {
+struct HomeDiscoverCard: View {
     let item: DiscoverItem
+    /// Fixed width in rows; nil fills a grid cell.
+    var width: CGFloat? = 118
 
     /// Same size as a loaded card, for rows that are still loading.
     static var placeholder: some View {
@@ -343,6 +345,7 @@ private struct HomeDiscoverCard: View {
                 Text(year).font(.caption).foregroundStyle(.secondary)
             }
         }
-        .frame(width: 118)
+        .frame(width: width)
+        .frame(maxWidth: width == nil ? .infinity : nil, alignment: .leading)
     }
 }
