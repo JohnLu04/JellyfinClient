@@ -510,7 +510,8 @@ final class MPVPlayerController: PlaybackEngine {
     /// prints the position every second, to test seeking without tapping.
     private func debugScript() {
         guard let script = ProcessInfo.processInfo.environment["JF_DEBUG_SKIPS"] else { return }
-        // "12:q8" switches to 8 Mbit/s at 12 s, "q-1" automatic, "q0" original; plain numbers skip.
+        // "12:q8" switches to 8 Mbit/s at 12 s, "q-1" automatic, "q0" original; "20:x" closes the player;
+        // plain numbers skip.
         let qualitySteps = script.split(separator: ",").compactMap { part -> (Int, Double)? in
             let pair = part.split(separator: ":")
             guard pair.count == 2, pair[1].hasPrefix("q"), let at = Int(pair[0]), let mbit = Double(pair[1].dropFirst()) else { return nil }
@@ -528,6 +529,11 @@ final class MPVPlayerController: PlaybackEngine {
                 if ProcessInfo.processInfo.environment["JF_DEBUG_PAUSE"] != nil, second == 8 || second == 12 {
                     print("[MPVDebug] toggle pause")
                     self.togglePause()
+                }
+                if script.contains("\(second):x") {
+                    print("[MPVDebug] close at \(String(format: "%.1f", self.position))")
+                    self.onFinished?()
+                    return
                 }
                 for step in qualitySteps where step.0 == second {
                     print("[MPVDebug] quality \(step.1)")

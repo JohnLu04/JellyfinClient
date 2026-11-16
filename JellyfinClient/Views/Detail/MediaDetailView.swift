@@ -190,7 +190,7 @@ struct MediaDetailView: View {
             Button {
                 switch record?.state {
                 case .completed?:
-                    if let record { downloads.play(record, title: target.name) }
+                    if let record { downloads.play(record, title: target.name, serverResumeSeconds: Ticks.seconds(target.resumeTicks)) }
                 case .downloading?, .queued?:
                     break
                 case .failed?:
@@ -211,7 +211,11 @@ struct MediaDetailView: View {
                         Text((record?.retryCount ?? 0) > 0 ? String(localized: "Download Interrupted · Retrying") : String(localized: "Download Queued"))
                     case .completed?:
                         Image(systemName: "checkmark.circle.fill")
-                        Text("Downloaded · Play Offline")
+                        if let resume = record?.resumeSeconds, record?.lastPlayedAt != nil {
+                            Text("Downloaded · Resume Offline from \(Ticks.clockText(Ticks.ticks(resume)))")
+                        } else {
+                            Text("Downloaded · Play Offline")
+                        }
                     case .failed?:
                         Image(systemName: "exclamationmark.arrow.circlepath")
                         Text("Download Failed · Retry")
@@ -522,7 +526,7 @@ struct MediaDetailView: View {
     private func episodeDownloadTapped(_ episode: BaseItem) {
         let record = downloads.record(for: episode.id)
         if record?.state == .completed, let record {
-            downloads.play(record, title: episode.name)
+            downloads.play(record, title: episode.name, serverResumeSeconds: Ticks.seconds(episode.resumeTicks))
         } else if record?.state == .failed {
             downloads.retry(id: episode.id)
         } else if record == nil {

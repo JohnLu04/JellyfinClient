@@ -260,16 +260,65 @@ final class DownloadManager: NSObject {
         DownloadActivityController.refresh(force: true)
     }
 
-    /// Plays a finished download with its extra audio tracks and subtitles.
-    func play(_ record: DownloadRecord, title: String? = nil) {
+    /// Plays a finished download with its extra audio tracks and subtitles, continuing where it stopped.
+    /// - Parameter serverResumeSeconds: the server's resume point, used while the download itself
+    ///   has never been played (it may have been watched by streaming or on another device).
+    func play(_ record: DownloadRecord, title: String? = nil, serverResumeSeconds: Double? = nil) {
         guard let url = fileURL(for: record) else { return }
+        let start = record.lastPlayedAt == nil ? (serverResumeSeconds ?? 0) : (record.resumeSeconds ?? 0)
         let tracks = extraFiles(for: record).map { file in
             PlaybackCoordinator.OfflineTrack(kind: file.extra.kind == .audio ? .audio : .subtitle, url: file.url,
                                              title: file.extra.title, language: file.extra.language)
         }
-        PlaybackCoordinator.shared.playLocal(fileURL: url, title: title ?? record.name, subtitle: record.subtitle,
+        PlaybackCoordinator.shared.playLocal(fileURL: url, itemId: record.id, startSeconds: start,
+                                             title: title ?? record.name, subtitle: record.subtitle,
                                              posterURL: posterURL(for: record), tracks: tracks,
                                              embeddedAudioTitle: record.mainAudioTitle)
+    }
+
+    // MARK: - Watch progress
+
+    /// Remembers how far a download was watched. `serverKnows`: the playback was streamed, so the
+    /// server has the position already; otherwise (offline) it's sent once the server is reachable.
+    func savePlayback(id: String, seconds: Double, duration: Double, serverKnows: Bool = false, syncNow: Bool = false) {
+        guard let index = records.firstIndex(where: { $0.id == id }), seconds.isFinite else { return }
+        let runtime = duration > 0 ? duration : Ticks.seconds(records[index].runTimeTicks ?? 0)
+        // Like Jellyfin: past 90 % counts as watched; the first seconds don't count as a resume point.
+        let finished = runtime > 0 && seconds >= runtime * 0.9
+        guard finished || seconds >= 10 else { return }
+        records[index].resumeSeconds = finished ? nil : seconds
+        records[index].lastPlayedAt = .now
+        if finished { records[index].watched = true }
+        if !serverKnows { records[index].playStateNeedsSync = true }
+        saveIndex()
+        if syncNow, !serverKnows { syncPlayStates() }
+    }
+
+    /// Sends offline watch progress to the server (after offline playback, at launch, back in the app).
+    func syncPlayStates() {
+        let pending = records.filter { $0.playStateNeedsSync == true }
+        guard !pending.isEmpty, let stored = SessionStorage.load() else { return }
+        let api = JellyfinAPI(session: stored)
+        Task {
+            for record in pending {
+                let finished = record.resumeSeconds == nil && record.watched == true
+                do {
+                    try await api.updatePlayState(itemId: record.id,
+                                                  positionTicks: finished ? 0 : Ticks.ticks(record.resumeSeconds ?? 0),
+                                                  played: finished ? true : nil,
+                                                  lastPlayed: record.lastPlayedAt ?? .now)
+                    guard let index = records.firstIndex(where: { $0.id == record.id }),
+                          records[index].lastPlayedAt == record.lastPlayedAt else { continue }   // watched again meanwhile
+                    records[index].playStateNeedsSync = nil
+                    saveIndex()
+                    DownloadDiagnostics.log("\(record.id): offline watch progress sent to the server")
+                } catch {
+                    downloadLog.notice("Play state sync for \(record.id, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+                    return      // probably offline: try again later
+                }
+            }
+            NotificationCenter.default.post(name: .playbackDidStop, object: nil)    // screens reload the new position
+        }
     }
 
     // MARK: - Queue
@@ -542,6 +591,7 @@ final class DownloadManager: NSObject {
         Self.prepareDirectory()
         retryDeferredIndex()
         inAppBlocked = false
+        syncPlayStates()
         // After a relaunch the keep-alive isn't running yet; it can only be requested in the foreground.
         if let record = records.first(where: { $0.state == .downloading }) ?? records.first(where: { $0.isActive }) {
             DownloadKeepAlive.begin(title: String(localized: "Downloading"), subtitle: record.name)

@@ -60,6 +60,12 @@ struct DownloadRecord: Codable, Identifiable, Equatable {
     /// Whose poster was saved: "season" or "series" for episodes (instead of the episode still), "item".
     /// Episodes saved before this existed get theirs replaced once (see `DownloadManager`).
     var posterSource: String? = nil
+    /// Where offline playback stopped (nil: not started or finished), when, and whether it was watched to the end.
+    var resumeSeconds: Double? = nil
+    var lastPlayedAt: Date? = nil
+    var watched: Bool? = nil
+    /// Offline progress the server doesn't know yet; sent when it's reachable.
+    var playStateNeedsSync: Bool? = nil
     var state: State
     var progress: Double
     var bytesWritten: Int64

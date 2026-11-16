@@ -8,6 +8,8 @@ final class PlaybackCoordinator {
     static let shared = PlaybackCoordinator()
 
     private(set) var session: PlaybackSession?
+    /// A download playing offline: its progress is kept with the download (and synced later).
+    private var localItemId: String?
     private var engine: PlaybackEngine?
     private weak var presentedController: UIViewController?
     /// The player screen while Picture in Picture shows the video (dismissed, but kept for coming back).
@@ -49,10 +51,11 @@ final class PlaybackCoordinator {
         let language: String?
     }
 
-    func playLocal(fileURL: URL, title: String, subtitle: String? = nil, posterURL: URL? = nil,
-                   tracks: [OfflineTrack] = [], embeddedAudioTitle: String? = nil) {
+    func playLocal(fileURL: URL, itemId: String? = nil, startSeconds: Double = 0, title: String, subtitle: String? = nil,
+                   posterURL: URL? = nil, tracks: [OfflineTrack] = [], embeddedAudioTitle: String? = nil) {
         stop()
-        present(player: PlayerKind.current, url: fileURL, title: title, startSeconds: 0, session: nil,
+        localItemId = itemId
+        present(player: PlayerKind.current, url: fileURL, title: title, startSeconds: startSeconds, session: nil,
                 metadata: .init(title: title, subtitle: subtitle, artworkURL: posterURL),
                 offlineTracks: tracks, embeddedAudioTitle: embeddedAudioTitle)
     }
@@ -87,6 +90,7 @@ final class PlaybackCoordinator {
         session?.adaptive?.stop()
         self.engine = nil
         session = nil
+        localItemId = nil
         didReportStart = false
         parkedController = nil
         updateIdleTimer()
@@ -210,7 +214,18 @@ final class PlaybackCoordinator {
     // MARK: - Reporting
 
     private func report(_ event: JellyfinAPI.PlaybackEvent) {
+        if session == nil, let id = localItemId, let engine, event != .start {
+            // Offline: kept with the download, sent to the server when it's reachable.
+            DownloadManager.shared.savePlayback(id: id, seconds: engine.currentSeconds, duration: engine.durationSeconds,
+                                                syncNow: event == .stopped)
+            return
+        }
         guard let session, let engine, didReportStart || event == .start else { return }
+        if event != .start {
+            // Streamed but also downloaded: the download continues from here too.
+            DownloadManager.shared.savePlayback(id: session.item.id, seconds: engine.currentSeconds,
+                                                duration: engine.durationSeconds, serverKnows: true)
+        }
         let report = JellyfinAPI.PlaybackReport(
             itemId: session.item.id,
             mediaSourceId: session.source.id,

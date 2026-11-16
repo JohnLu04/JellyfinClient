@@ -485,6 +485,23 @@ struct JellyfinAPI {
         }
     }
 
+    /// Sets the resume position (and the watched flag) of an item, e.g. after watching a download offline.
+    /// Jellyfin 10.9+ uses /UserItems/{id}/UserData; older servers /Users/{userId}/Items/{id}/UserData.
+    func updatePlayState(itemId: String, positionTicks: Int64, played: Bool?, lastPlayed: Date) async throws {
+        var body: [String: Any] = [
+            "PlaybackPositionTicks": positionTicks,
+            "LastPlayedDate": lastPlayed.formatted(.iso8601),
+        ]
+        if let played { body["Played"] = played }
+        let data = try JSONSerialization.data(withJSONObject: body)
+        do {
+            _ = try await sendRaw("POST", "UserItems/\(itemId)/UserData", query: ["userId": userId], body: data)
+        } catch {
+            guard let userId else { throw error }
+            _ = try await sendRaw("POST", "Users/\(userId)/Items/\(itemId)/UserData", body: data)
+        }
+    }
+
     func stopTranscoding(playSessionId: String) async throws {
         try await sendRaw("DELETE", "Videos/ActiveEncodings", query: [
             "deviceId": Self.deviceId, "playSessionId": playSessionId,

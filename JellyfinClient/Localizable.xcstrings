@@ -1201,6 +1201,16 @@
         }
       }
     },
+    "Downloaded · Resume Offline from %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offline fortsetzen ab %@"
+          }
+        }
+      }
+    },
     "Downloading": {
       "localizations": {
         "de": {

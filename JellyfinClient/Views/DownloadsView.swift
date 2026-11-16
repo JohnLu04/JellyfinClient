@@ -62,6 +62,7 @@ struct DownloadRow: View {
         HStack(spacing: 12) {
             poster
                 .frame(width: 60, height: 90)
+                .overlay(alignment: .bottom) { watchProgress }
                 .clipShape(RoundedRectangle(cornerRadius: 6))
             VStack(alignment: .leading, spacing: 4) {
                 if let subtitle = record.subtitle {
@@ -122,6 +123,21 @@ struct DownloadRow: View {
             parts.append("\(ByteCountFormatter.string(fromByteCount: Int64(speed), countStyle: .file))/s")
         }
         return parts.joined(separator: " · ")
+    }
+
+    /// How far it was watched (offline or streamed), like the progress bar on posters elsewhere.
+    @ViewBuilder
+    private var watchProgress: some View {
+        if record.state == .completed, let seconds = record.resumeSeconds, let ticks = record.runTimeTicks, ticks > 0 {
+            let fraction = min(1, seconds / Ticks.seconds(ticks))
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Rectangle().fill(.black.opacity(0.55))
+                    Rectangle().fill(Color.accentColor).frame(width: geo.size.width * fraction)
+                }
+            }
+            .frame(height: 4)
+        }
     }
 
     @ViewBuilder
