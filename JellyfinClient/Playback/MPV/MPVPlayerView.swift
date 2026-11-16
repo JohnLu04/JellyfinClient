@@ -94,6 +94,7 @@ struct MPVPlayerView: View {
     @State private var holdControls = false
     @State private var hideTask: Task<Void, Never>?
     @State private var showTracks = false
+    @State private var showQuality = false
     @State private var showStats = false
 
     var body: some View {
@@ -134,11 +135,21 @@ struct MPVPlayerView: View {
             if let error = controller.errorMessage {
                 errorView(error)
             }
+
+            // Also over a playback error: a lower quality is often the way out.
+            if showQuality {
+                qualityPanel
+            }
         }
         .statusBarHidden(!showControls)
         .persistentSystemOverlays(.hidden)
         .preferredColorScheme(.dark)
-        .onAppear { scheduleHide() }
+        .onAppear {
+            scheduleHide()
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["JF_DEBUG_SHOW_QUALITY"] != nil { showQuality = true; holdControls = true }
+            #endif
+        }
         .onChange(of: controller.isPaused) { scheduleHide() }
         .alert("Picture in Picture", isPresented: Binding(
             get: { controller.pipMessage != nil },
@@ -179,6 +190,14 @@ struct MPVPlayerView: View {
             .opacity(controller.isSwitching ? 0.4 : 1)
 
             Spacer()
+
+            if controller.currentQuality != nil {
+                HStack {
+                    Spacer()
+                    qualityButton
+                }
+                .padding(.horizontal)
+            }
 
             // Separate view: only the seek bar re-renders as the time advances, not the menus above.
             MPVScrubBar(controller: controller) { scrubbing in
@@ -245,6 +264,83 @@ struct MPVPlayerView: View {
                 .contentShape(Circle())
         }
         .accessibilityLabel("Video Details")
+    }
+
+    /// Shows the current streaming quality; opens the list to change it while the video plays.
+    private var qualityButton: some View {
+        Button {
+            hideTask?.cancel()
+            holdControls = true
+            withAnimation(.easeOut(duration: 0.2)) { showQuality = true }
+        } label: {
+            Label(controller.currentQuality.map(Bitrate.label) ?? "", systemImage: "gauge.with.dots.needle.67percent")
+                .font(.subheadline.weight(.semibold))
+                .padding(.horizontal, 14)
+                .frame(height: 36)
+                .background(.ultraThinMaterial, in: Capsule())
+                .contentShape(Capsule())
+        }
+        .accessibilityLabel("Quality")
+        .accessibilityValue(controller.currentQuality.map(Bitrate.label) ?? "")
+        .disabled(controller.isSwitching || controller.pipState != .idle)
+    }
+
+    private var qualityPanel: some View {
+        let choices = controller.qualityChoices
+        return ZStack {
+            Color.black.opacity(0.55)
+                .ignoresSafeArea()
+                .onTapGesture { closeQuality() }
+
+            VStack(spacing: 0) {
+                HStack {
+                    Text("Quality")
+                        .font(.headline)
+                    Spacer()
+                    Button("Done") { closeQuality() }
+                        .font(.headline)
+                        .padding(.vertical, 8)
+                        .contentShape(Rectangle())
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+
+                Divider().overlay(.white.opacity(0.2))
+
+                trackColumn("Streaming quality",
+                            options: choices.enumerated().map { index, mbit in (index, qualityLabel(mbit)) },
+                            selected: controller.currentQuality.flatMap { current in choices.firstIndex(of: current) }) { index in
+                    controller.selectQuality(choices[index])
+                    closeQuality()
+                }
+
+                Text("The video continues where it is; a new quality takes a moment to load.")
+                    .font(.footnote)
+                    .foregroundStyle(.white.opacity(0.6))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: 420, maxHeight: 520)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20))
+            .environment(\.colorScheme, .dark)
+            .padding(16)
+        }
+        .transition(.opacity)
+    }
+
+    private func qualityLabel(_ mbit: Double) -> String {
+        if mbit == 0, let source = controller.sourceMbit {
+            return Bitrate.label(0) + " · " + source.formatted(.number.precision(.fractionLength(1))) + " Mbit/s"
+        }
+        return Bitrate.label(mbit)
+    }
+
+    private func closeQuality() {
+        withAnimation(.easeOut(duration: 0.2)) { showQuality = false }
+        holdControls = false
+        scheduleHide()
     }
 
     private var tracksPanel: some View {

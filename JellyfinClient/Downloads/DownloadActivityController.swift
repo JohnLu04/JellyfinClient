@@ -47,6 +47,15 @@ enum DownloadActivityController {
     /// After launch: keep following an activity from before, or remove it if nothing is pending.
     static func appLaunched() {
         #if DEBUG
+        if let id = ProcessInfo.processInfo.environment["JF_DEBUG_PLAY_ITEM"], let stored = SessionStorage.load() {
+            let api = JellyfinAPI(session: stored)
+            Task {
+                try? await Task.sleep(for: .seconds(3))
+                if let item = try? await api.item(id: id) {
+                    try? await PlaybackCoordinator.shared.playWithDefaults(item, api: api, fromStart: true)
+                }
+            }
+        }
         if let id = ProcessInfo.processInfo.environment["JF_DEBUG_PLAY_DOWNLOAD"],
            let record = DownloadManager.shared.record(for: id) {
             Task {

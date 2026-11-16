@@ -48,6 +48,8 @@ final class MPVPlayerController: PlaybackEngine {
     private(set) var subtitleOptions: [TrackOption] = []
     private(set) var selectedAudio: Int?
     private(set) var selectedSubtitle: Int?
+    /// Streaming quality of this playback in Mbit/s (0 = original, -1 = automatic); nil for local files.
+    private(set) var currentQuality: Double?
     /// Picture in Picture: idle, preparing (Apple's player loads) or active.
     enum PiPState { case idle, preparing, active }
     private(set) var pipState: PiPState = .idle
@@ -59,7 +61,8 @@ final class MPVPlayerController: PlaybackEngine {
     @ObservationIgnored var onFinished: (() -> Void)?
     /// Track changes made in the player, so progress reports carry the current audio/subtitle.
     @ObservationIgnored var onSelectionChange: ((TrackSelection) -> Void)?
-    @ObservationIgnored var reloader: ((TrackSelection) async throws -> PlaybackSession)?
+    /// Asks the server for a new stream with these tracks and this quality (Mbit/s, 0 = original, -1 = automatic).
+    @ObservationIgnored var reloader: ((TrackSelection, Double) async throws -> PlaybackSession)?
     /// Picture in Picture is up (hide the player screen) / should come back (show it, then call the handler) /
     /// was closed (stop playback).
     @ObservationIgnored var onPiPStarted: (() -> Void)?
@@ -106,6 +109,7 @@ final class MPVPlayerController: PlaybackEngine {
             subtitleOptions = session.subtitleStreams.map { TrackOption(id: $0.index, label: $0.label) }
             selectedAudio = session.selection.audioIndex
             selectedSubtitle = session.selection.subtitleIndex
+            currentQuality = session.maxMbit
         }
     }
 
@@ -171,6 +175,32 @@ final class MPVPlayerController: PlaybackEngine {
             return
         }
         core?.command(["seek", String(format: "%.3f", seconds), "relative"])
+    }
+
+    // MARK: - Quality
+
+    /// The source's own bitrate in Mbit/s, if the server told us.
+    var sourceMbit: Double? {
+        guard let bps = session?.source.bitrate, bps > 0 else { return nil }
+        return Double(bps) / 1_000_000
+    }
+
+    /// Choices for the quality menu: Original, Automatic and fixed limits below the source's bitrate.
+    var qualityChoices: [Double] {
+        guard session != nil else { return [] }
+        let presets: [Double] = [1, 1.5, 2, 3, 4, 6, 8, 10, 15, 20, 30, 40, 60]
+        var limits = presets.filter { limit in sourceMbit.map { limit < $0 * 0.95 } ?? true }
+        if let current = currentQuality, current > 0, !limits.contains(current) {
+            limits.append(current)
+            limits.sort()
+        }
+        return [0, Bitrate.automatic] + limits.reversed()
+    }
+
+    /// Switches the streaming quality while playing: a new stream from the server, continuing where it was.
+    func selectQuality(_ mbit: Double) {
+        guard session != nil, mbit != currentQuality || errorMessage != nil, !isSwitching, pipState == .idle else { return }
+        reloadStream(maxMbit: mbit)
     }
 
     // MARK: - Picture in Picture
@@ -454,14 +484,16 @@ final class MPVPlayerController: PlaybackEngine {
         selectedSubtitle = tracks.first { $0.type == "sub" && $0.isSelected }?.id
     }
 
-    private func reloadStream() {
-        guard let reloader else { return }
+    private func reloadStream(maxMbit: Double? = nil) {
+        guard let reloader, let current = session else { return }
         isSwitching = true
+        errorMessage = nil      // another quality is also the way out of a failed stream
         let resumeAt = position
         let selection = TrackSelection(audioIndex: selectedAudio, subtitleIndex: selectedSubtitle)
         Task {
             do {
-                let newSession = try await reloader(selection)
+                let newSession = try await reloader(selection, maxMbit ?? current.maxMbit)
+                currentQuality = newSession.maxMbit
                 session = newSession
                 addedSubtitles = [:]
                 url = newSession.url
@@ -478,6 +510,12 @@ final class MPVPlayerController: PlaybackEngine {
     /// prints the position every second, to test seeking without tapping.
     private func debugScript() {
         guard let script = ProcessInfo.processInfo.environment["JF_DEBUG_SKIPS"] else { return }
+        // "12:q8" switches to 8 Mbit/s at 12 s, "q-1" automatic, "q0" original; plain numbers skip.
+        let qualitySteps = script.split(separator: ",").compactMap { part -> (Int, Double)? in
+            let pair = part.split(separator: ":")
+            guard pair.count == 2, pair[1].hasPrefix("q"), let at = Int(pair[0]), let mbit = Double(pair[1].dropFirst()) else { return nil }
+            return (at, mbit)
+        }
         let steps = script.split(separator: ",").compactMap { part -> (Double, Double)? in
             let pair = part.split(separator: ":")
             guard pair.count == 2, let at = Double(pair[0]), let by = Double(pair[1]) else { return nil }
@@ -487,11 +525,19 @@ final class MPVPlayerController: PlaybackEngine {
             for second in 1...90 {
                 try? await Task.sleep(for: .seconds(1))
                 guard let self else { return }
+                if ProcessInfo.processInfo.environment["JF_DEBUG_PAUSE"] != nil, second == 8 || second == 12 {
+                    print("[MPVDebug] toggle pause")
+                    self.togglePause()
+                }
+                for step in qualitySteps where step.0 == second {
+                    print("[MPVDebug] quality \(step.1)")
+                    self.selectQuality(step.1)
+                }
                 for step in steps where Int(step.0) == second {
                     print("[MPVDebug] skip \(step.1)")
                     self.skip(by: step.1)
                 }
-                print("[MPVDebug] t=\(second) position=\(String(format: "%.1f", self.position)) duration=\(String(format: "%.1f", self.duration)) mpv=\(self.core?.getString("time-pos") ?? "nil")")
+                print("[MPVDebug] t=\(second) position=\(String(format: "%.1f", self.position)) duration=\(String(format: "%.1f", self.duration)) quality=\(self.currentQuality ?? -99) switching=\(self.isSwitching) screenOn=\(UIApplication.shared.isIdleTimerDisabled) mpv=\(self.core?.getString("time-pos") ?? "nil")")
             }
         }
     }

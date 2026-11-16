@@ -57,10 +57,11 @@ final class PlaybackCoordinator {
                 offlineTracks: tracks, embeddedAudioTitle: embeddedAudioTitle)
     }
 
-    /// Asks the server for a new stream with other tracks (used by mpv when a switch needs a new transcode).
-    func reload(selection: TrackSelection) async throws -> PlaybackSession {
+    /// Asks the server for a new stream with other tracks or another quality (mpv: track switches that need
+    /// a new transcode, and quality changes from the player).
+    func reload(selection: TrackSelection, maxMbit: Double? = nil) async throws -> PlaybackSession {
         guard let old = session else { throw APIError.noPlayableSource }
-        let new = try await PlaybackResolver.resolve(item: old.item, api: old.api, maxMbit: old.maxMbit,
+        let new = try await PlaybackResolver.resolve(item: old.item, api: old.api, maxMbit: maxMbit ?? old.maxMbit,
                                                      selection: selection, player: old.player)
         if old.playMethod != .directPlay, let id = old.playSessionId {
             enqueue { try? await old.api.stopTranscoding(playSessionId: id) }
@@ -88,6 +89,7 @@ final class PlaybackCoordinator {
         session = nil
         didReportStart = false
         parkedController = nil
+        updateIdleTimer()
 
         if let controller = presentedController, controller.presentingViewController != nil, !controller.isBeingDismissed {
             controller.dismiss(animated: true)
@@ -114,6 +116,7 @@ final class PlaybackCoordinator {
             native.onReady = { [weak self] in self?.engineDidStart() }
             native.onStateChange = { [weak self] in
                 self?.report(.progress)
+                self?.updateIdleTimer()
                 NowPlayingController.shared.refresh()
             }
             native.onDismiss = { [weak self] in self?.stop() }
@@ -129,6 +132,7 @@ final class PlaybackCoordinator {
             mpv.onReady = { [weak self] in self?.engineDidStart() }
             mpv.onStateChange = { [weak self] in
                 self?.report(.progress)
+                self?.updateIdleTimer()
                 NowPlayingController.shared.refresh()
             }
             mpv.onFinished = { [weak self] in self?.stop() }
@@ -143,9 +147,9 @@ final class PlaybackCoordinator {
                 self?.session?.selection = selection
                 self?.report(.progress)
             }
-            mpv.reloader = { [weak self] selection in
+            mpv.reloader = { [weak self] selection, maxMbit in
                 guard let self else { throw CancellationError() }
-                return try await self.reload(selection: selection)
+                return try await self.reload(selection: selection, maxMbit: maxMbit)
             }
             engine = mpv
             let host = UIHostingController(rootView: MPVPlayerView(controller: mpv) { [weak self] in self?.stop() })
@@ -156,6 +160,17 @@ final class PlaybackCoordinator {
         presentedController = controller
         topViewController()?.present(controller, animated: true)
         if let engine { NowPlayingController.shared.begin(engine: engine, metadata: metadata) }
+        updateIdleTimer()
+    }
+
+    // MARK: - Screen
+
+    /// Keeps the screen on while a video plays in the player (Auto-Lock, also the short one in Low Power
+    /// Mode, would turn it off: mpv doesn't keep it awake by itself). Paused, closed or in Picture in
+    /// Picture, the screen may sleep as usual.
+    private func updateIdleTimer() {
+        let playing = engine.map { !$0.isPausedNow } ?? false
+        UIApplication.shared.isIdleTimerDisabled = playing && parkedController == nil
     }
 
     // MARK: - Picture in Picture
@@ -165,19 +180,24 @@ final class PlaybackCoordinator {
         guard let controller = presentedController, controller.presentingViewController != nil else { return }
         parkedController = controller
         controller.dismiss(animated: true)
+        updateIdleTimer()
     }
 
     /// Back from Picture in Picture: show the player screen again.
     private func presentAgain(_ controller: UIViewController, completion: @escaping (Bool) -> Void) {
         guard controller.presentingViewController == nil, let top = topViewController() else { return completion(true) }
         presentedController = controller
-        top.present(controller, animated: true) { completion(true) }
+        top.present(controller, animated: true) { [weak self] in
+            completion(true)
+            self?.updateIdleTimer()
+        }
     }
 
     private func engineDidStart() {
         guard !didReportStart else { return }
         didReportStart = true
         report(.start)
+        updateIdleTimer()
         progressTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(10))

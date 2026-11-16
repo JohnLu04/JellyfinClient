@@ -3161,6 +3161,16 @@
         }
       }
     },
+    "Streaming quality": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Streaming-Qualität"
+          }
+        }
+      }
+    },
     "Streaming · %@": {
       "localizations": {
         "de": {
@@ -3337,6 +3347,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Das Streaming-Limit des Servers ist erreicht."
+          }
+        }
+      }
+    },
+    "The video continues where it is; a new quality takes a moment to load.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das Video läuft an derselben Stelle weiter; die neue Qualität braucht einen Moment zum Laden."
           }
         }
       }
