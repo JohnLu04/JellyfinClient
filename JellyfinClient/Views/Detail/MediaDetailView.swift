@@ -204,9 +204,7 @@ struct MediaDetailView: View {
                 HStack(spacing: 10) {
                     switch record?.state {
                     case .downloading?:
-                        ProgressView(value: record?.displayProgress ?? 0)
-                            .progressViewStyle(.circular)
-                            .controlSize(.small)
+                        DownloadProgressRing(progress: record?.displayProgress ?? 0, size: 22)
                         if record?.extraPhase?.kind == .audio {
                             Text("Downloading audio track · \(Int((record?.displayProgress ?? 0) * 100)) %")
                         } else if record?.extraPhase?.kind == .subtitle {
@@ -216,10 +214,10 @@ struct MediaDetailView: View {
                         }
                         Image(systemName: "pause.fill").font(.subheadline).foregroundStyle(.secondary)
                     case .paused?:
-                        Image(systemName: "pause.circle")
+                        DownloadProgressRing(progress: record?.displayProgress ?? 0, mode: .paused, size: 22)
                         Text("Paused · \(Int((record?.displayProgress ?? 0) * 100)) % · Resume")
                     case .queued?:
-                        Image(systemName: "clock")
+                        DownloadProgressRing(progress: record?.displayProgress ?? 0, mode: .waiting, size: 22)
                         Text((record?.retryCount ?? 0) > 0 ? String(localized: "Download Interrupted · Retrying") : String(localized: "Download Queued"))
                     case .completed?:
                         Image(systemName: "checkmark.circle.fill")
@@ -632,19 +630,10 @@ struct EpisodeCell: View {
     @ViewBuilder
     private var downloadIcon: some View {
         switch record?.state {
-        case .downloading?:
-            ProgressView(value: record?.displayProgress ?? 0)
-                .progressViewStyle(.circular)
-                .controlSize(.small)
-        case .queued?:
-            Image(systemName: "clock").font(.title3).foregroundStyle(.secondary)
-        case .paused?:
-            ZStack {
-                ProgressView(value: record?.displayProgress ?? 0)
-                    .progressViewStyle(.circular)
-                    .controlSize(.small)
-                    .tint(.secondary)
-                Image(systemName: "pause.fill").font(.system(size: 8, weight: .bold)).foregroundStyle(.secondary)
+        case .downloading?, .queued?, .paused?:
+            // Like the video's progress: a ring that fills up in red; tap pauses or resumes.
+            if let record, let mode = record.ringMode {
+                DownloadProgressRing(progress: record.displayProgress, mode: mode)
             }
         case .completed?:
             Image(systemName: "checkmark.circle.fill").font(.title3).foregroundStyle(.tint)

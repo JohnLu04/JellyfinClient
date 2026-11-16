@@ -2531,6 +2531,16 @@
         }
       }
     },
+    "Paused · %lld %%": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pausiert · %lld %%"
+          }
+        }
+      }
+    },
     "Paused · %lld %% · Resume": {
       "localizations": {
         "de": {
