@@ -33,6 +33,8 @@ final class DownloadManager: NSObject {
     private static let maxConcurrent = 1
     private static let maxRetries = 10
     private static let maxConnectivityRetries = 120
+    /// Server errors on a subtitle (e.g. it can't be extracted): about a minute of tries, then it's skipped.
+    private static let maxExtraServerRetries = 6
     /// Segments requested at once. More would make Jellyfin restart the transcode: it does once a
     /// request is more than 24 s / segment length ahead of what it is encoding.
     private static let segmentPipeline = 2
@@ -63,6 +65,9 @@ final class DownloadManager: NSObject {
     /// Bytes received so far by segments in flight, for the progress bar.
     @ObservationIgnored private var inflightBytes: [String: (written: Int64, expected: Int64)] = [:]
     @ObservationIgnored private var playlistFetches: Set<String> = []
+    /// Subtitles being fetched ahead (keys), and the downloads that got that chance in this run.
+    @ObservationIgnored private var subtitleFetches: Set<String> = []
+    @ObservationIgnored private var subtitlePrefetchStarted: Set<String> = []
     @ObservationIgnored private var isReconnected = false
     /// The index exists but can't be read yet (woken while the iPhone is locked and the file is still
     /// under complete protection). Nothing is saved or deleted until it can be read.
@@ -225,6 +230,7 @@ final class DownloadManager: NSObject {
     /// - Parameter mbit: transcode to this bitrate, or `nil` for the original file.
     func start(item: BaseItem, api: JellyfinAPI, mbit: Double?, tracks: DownloadTrackOptions = .stored) {
         delete(id: item.id)
+        subtitlePrefetchStarted.remove(item.id)
 
         let subtitle = [item.seriesName, item.episodeLabel].compactMap { $0 }.joined(separator: " · ")
         let source = item.primaryMediaSource
@@ -532,6 +538,12 @@ final class DownloadManager: NSObject {
             return
         }
         let api = JellyfinAPI(session: stored)
+        if record.fileName == nil { prefetchSubtitles(id: id, api: api) }
+        if parts.contains(where: { subtitleFetches.contains($0.key(for: id)) }) {
+            // The subtitle is on its way already (fetched ahead): carries on when it's there.
+            records[index].state = .downloading
+            return
+        }
         if parts.count == 1, case let part = parts[0], part == .playlist(part.hlsTarget ?? .video), let target = part.hlsTarget {
             fetchPlaylist(at: index, target, api: api)
             return
@@ -853,6 +865,77 @@ final class DownloadManager: NSObject {
         }
     }
 
+    /// Subtitles are small: they're fetched right at the start, next to the video, while the app is
+    /// surely running (the user just tapped Download). Left for the end, they'd often be due in the
+    /// background with the iPhone locked, where iOS may postpone new transfers for hours. If this
+    /// fails, the subtitle is simply loaded after the video, with the usual retries.
+    private func prefetchSubtitles(id: String, api: JellyfinAPI) {
+        guard !indexUnavailable, !subtitlePrefetchStarted.contains(id),
+              let record = records.first(where: { $0.id == id }), let extras = record.extras else { return }
+        let pending = extras.indices.filter { extras[$0].kind == .subtitle && extras[$0].isPending }
+        guard !pending.isEmpty else { return }
+        subtitlePrefetchStarted.insert(id)
+        for n in pending { subtitleFetches.insert(DownloadPart.extra(n).key(for: id)) }
+        let mediaSourceId = record.mediaSourceId
+        Task {
+            // When the app goes to the background meanwhile, iOS gives it time to finish.
+            let time = BackgroundTime("Subtitles")
+            defer { time.end() }
+            for n in pending {
+                let key = DownloadPart.extra(n).key(for: id)
+                let extra = extras[n]
+                let what = "subtitle \(extra.streamIndex) (\(extra.title))"
+                var result = "not fetched ahead"
+                if let url = api.subtitleDownloadURL(itemId: id, mediaSourceId: mediaSourceId, streamIndex: extra.streamIndex, codec: extra.codec),
+                   records.first(where: { $0.id == id })?.extras?[n].isPending == true {
+                    var request = URLRequest(url: url)
+                    request.setValue(api.authorizationHeader, forHTTPHeaderField: "Authorization")
+                    request.cachePolicy = .reloadIgnoringLocalCacheData
+                    request.timeoutInterval = 600      // the server may first have to extract it from the file
+                    do {
+                        let (data, response) = try await URLSession.shared.data(for: request)
+                        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                        if (200..<300).contains(status), !data.isEmpty {
+                            let ext = ((response.suggestedFilename as NSString?)?.pathExtension).flatMap { $0.isEmpty ? nil : $0 }
+                                ?? (url.pathExtension.isEmpty ? "srt" : url.pathExtension)
+                            let fileName = "\(key).\(ext.lowercased())"
+                            if let index = records.firstIndex(where: { $0.id == id }), records[index].extras?.indices.contains(n) == true,
+                               records[index].extras?[n].isPending == true, liveTasks[key] == nil,
+                               (try? Self.storeSmallFile(data, as: fileName)) != nil {
+                                records[index].extras?[n].fileName = fileName
+                                reportKeepAliveProgress(of: records[index])
+                                result = "stored (\(data.count) bytes, fetched ahead)"
+                            }
+                        } else {
+                            result = "not fetched ahead (HTTP \(status)) – loaded after the video"
+                        }
+                    } catch {
+                        result = "not fetched ahead (\(DownloadDiagnostics.describe(error as NSError))) – loaded after the video"
+                    }
+                }
+                subtitleFetches.remove(key)
+                guard let index = records.firstIndex(where: { $0.id == id }) else { continue }
+                DownloadDiagnostics.log("\(id): \(what) \(result)")
+                // The download may have been waiting for this subtitle.
+                if records[index].state == .downloading, liveKeys(of: id).isEmpty {
+                    records[index].state = .queued
+                }
+                saveIndex()
+                pump()
+            }
+        }
+    }
+
+    /// Writes a small extra file (fetched with a plain request) into the download folder.
+    private static func storeSmallFile(_ data: Data, as fileName: String) throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var url = directory.appendingPathComponent(fileName)
+        try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? url.setResourceValues(values)
+    }
+
     /// All segments are appended: the grown file becomes the video (or the audio track's file).
     private func finalizeHLS(at index: Int, _ target: HLSTarget) throws {
         guard let hls = hlsProgress(of: records[index], target) else { return }
@@ -872,7 +955,7 @@ final class DownloadManager: NSObject {
         try? FileManager.default.removeItem(at: Self.hlsListURL(for: id, target))
         if case .extra(let n) = target {
             records[index].extras?[n].fileName = final
-            clearAudioProgress(at: index)
+            clearExtraProgress(at: index)
             DownloadDiagnostics.log("\(id): \(label(target, records[index]))assembled from \(hls.segmentCount) segments (\(hls.bytes) bytes)")
             return
         }
@@ -942,11 +1025,18 @@ final class DownloadManager: NSObject {
             // An extra audio track: its own progress bar, like the video's.
             inflightBytes[key] = (written, expected)
             if let n = part.extraIndex { updateAudioProgress(at: index, n) }
-            updateSpeed(id: id, bytes: records[index].audioBytesWritten ?? 0)
+            updateSpeed(id: id, bytes: records[index].extraBytesWritten ?? 0)
             reportKeepAliveProgress(of: records[index])
             if Date.now.timeIntervalSince(lastIndexSave) > 10 { saveIndex() }
             return
-        case .extra, .extraPlaylist:
+        case .extra(let n):
+            // A subtitle: small, but its own progress bar too.
+            inflightBytes[key] = (written, expected)
+            updateFileExtraProgress(at: index, n, written: written, expected: expected)
+            updateSpeed(id: id, bytes: written)
+            reportKeepAliveProgress(of: records[index])
+            return
+        case .extraPlaylist:
             reportKeepAliveProgress(of: records[index])
             return
         case .initSegment, .segment:
@@ -1004,18 +1094,27 @@ final class DownloadManager: NSObject {
             return id == record.id && part.hlsTarget == .extra(n) && part.segmentNumber != nil
         }.values
         let fraction = inflight.reduce(0.0) { $0 + ($1.expected > 0 ? Double($1.written) / Double($1.expected) : 0) }
-        records[index].audioBytesWritten = hls.bytes + inflight.reduce(0) { $0 + $1.written }
-        records[index].audioProgress = min(0.99, (Double(hls.nextSegment) + fraction) / Double(hls.segmentCount))
+        records[index].extraBytesWritten = hls.bytes + inflight.reduce(0) { $0 + $1.written }
+        records[index].extraProgress = min(0.99, (Double(hls.nextSegment) + fraction) / Double(hls.segmentCount))
         // From the bitrate at first, then from the segments that are there (the last one is shorter).
-        records[index].audioExpectedBytes = hls.nextSegment >= 2
+        records[index].extraExpectedBytes = hls.nextSegment >= 2
             ? Int64(Double(hls.bytes) / Double(hls.nextSegment) * Double(hls.segmentCount))
             : Self.estimatedTrackBytes(record)
     }
 
-    private func clearAudioProgress(at index: Int) {
-        records[index].audioProgress = nil
-        records[index].audioBytesWritten = nil
-        records[index].audioExpectedBytes = nil
+    /// Progress bar of an extra file loading in one piece (a subtitle). Converted subtitles may come
+    /// without a size; then only the bytes are shown.
+    private func updateFileExtraProgress(at index: Int, _ n: Int, written: Int64, expected: Int64) {
+        guard records[index].nextExtraIndex == n else { return }
+        records[index].extraBytesWritten = written
+        records[index].extraExpectedBytes = expected > 0 ? expected : nil
+        records[index].extraProgress = expected > 0 ? min(0.99, Double(written) / Double(expected)) : nil
+    }
+
+    private func clearExtraProgress(at index: Int) {
+        records[index].extraProgress = nil
+        records[index].extraBytesWritten = nil
+        records[index].extraExpectedBytes = nil
         speedSamples[records[index].id] = nil
     }
 
@@ -1046,6 +1145,15 @@ final class DownloadManager: NSObject {
                 }
                 parts.append((trackBytes, done))
             }
+        }
+        // Subtitles too, so the progress doesn't reach the end (and iOS end the keep-alive) before they're there.
+        for n in (record.extras ?? []).indices where record.extras?[n].kind == .subtitle {
+            let extra = record.extras![n]
+            var done: Double = extra.isPending ? 0 : 1
+            if extra.isPending, let inflight = inflightBytes[DownloadPart.extra(n).key(for: record.id)], inflight.expected > 0 {
+                done = min(1, Double(inflight.written) / Double(inflight.expected))
+            }
+            parts.append((Double(max(videoBytes, 1)) * 0.01, done))
         }
         let weight = parts.reduce(0) { $0 + $1.weight }
         let fraction = parts.reduce(0) { $0 + $1.weight * $1.done } / weight
@@ -1132,6 +1240,9 @@ final class DownloadManager: NSObject {
         case .extra(let n):
             if records[index].extras?.indices.contains(n) == true {
                 records[index].extras?[n].fileName = fileName
+                records[index].retryCount = nil
+                clearExtraProgress(at: index)
+                reportKeepAliveProgress(of: records[index])
                 DownloadDiagnostics.log("\(id): extra \(n) stored (\(size) bytes)")
             }
         case .original, .playlist:
@@ -1170,7 +1281,7 @@ final class DownloadManager: NSObject {
     private func skipExtra(at index: Int, extra: Int, reason: String) {
         let id = records[index].id
         records[index].extras?[extra].skipped = true
-        clearAudioProgress(at: index)
+        clearExtraProgress(at: index)
         if extraUsesHLS(records[index], extra) {
             try? FileManager.default.removeItem(at: Self.hlsListURL(for: id, .extra(extra)))
             try? FileManager.default.removeItem(at: Self.hlsOutputURL(for: id, .extra(extra)))
@@ -1261,7 +1372,7 @@ final class DownloadManager: NSObject {
             pump()
             return
         }
-        if let httpStatus, !Self.isRetryable(status: httpStatus) || (isExtra && httpStatus >= 500 && (records[index].retryCount ?? 0) >= 2) {
+        if let httpStatus, !Self.isRetryable(status: httpStatus) {
             giveUp(Self.message(forStatus: httpStatus))
             return
         }
@@ -1272,7 +1383,9 @@ final class DownloadManager: NSObject {
         let attempt = (records[index].retryCount ?? 0) + 1
         // A dropped or missing connection isn't the server's fault: keep waiting for it much longer
         // (about two hours at the longest wait) instead of giving up after a few minutes.
-        let limit = error.map(Self.isConnectivityError) == true ? Self.maxConnectivityRetries : Self.maxRetries
+        // A subtitle the server can't extract fails the same way each time: give up on it a bit sooner.
+        let limit = error.map(Self.isConnectivityError) == true ? Self.maxConnectivityRetries
+            : isExtra && (httpStatus ?? 0) >= 500 ? Self.maxExtraServerRetries : Self.maxRetries
         guard attempt <= limit else {
             giveUp(httpStatus.map(Self.message(forStatus:)) ?? error?.localizedDescription ?? String(localized: "Download failed."))
             return

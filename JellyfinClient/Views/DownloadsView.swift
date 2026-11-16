@@ -97,17 +97,17 @@ struct DownloadRow: View {
                         .font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 case .downloading:
                     ProgressView(value: record.displayProgress)
-                    if let title = audioTitleText {
+                    if let title = extraTitleText {
                         Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
-                    Text(record.errorMessage ?? audioProgressText ?? record.extrasProgress.map {
+                    Text(record.errorMessage ?? extraProgressText ?? record.extrasProgress.map {
                         String(localized: "Audio tracks & subtitles · \($0.done + 1) of \($0.total)")
                     } ?? progressText)
                         .font(.caption).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
                 case .paused:
                     ProgressView(value: record.displayProgress)
                         .tint(.secondary)
-                    if let title = audioTitleText {
+                    if let title = extraTitleText {
                         Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                     Text("Paused · \(Int(record.displayProgress * 100)) % · Tap to resume")
@@ -156,22 +156,28 @@ struct DownloadRow: View {
         return parts.joined(separator: " · ")
     }
 
-    /// "Audio track 1 of 2 · German" while an extra audio track loads after the video.
-    private var audioTitleText: String? {
-        guard let phase = record.audioPhase else { return nil }
-        var parts = [phase.total > 1 ? String(localized: "Audio track \(phase.number) of \(phase.total)") : String(localized: "Audio track")]
+    /// "Audio track 1 of 2 · German" or "Subtitle · English" while an extra file loads after the video.
+    private var extraTitleText: String? {
+        guard let phase = record.extraPhase else { return nil }
+        var parts: [String]
+        switch phase.kind {
+        case .audio:
+            parts = [phase.total > 1 ? String(localized: "Audio track \(phase.number) of \(phase.total)") : String(localized: "Audio track")]
+        case .subtitle:
+            parts = [phase.total > 1 ? String(localized: "Subtitle \(phase.number) of \(phase.total)") : String(localized: "Subtitle")]
+        }
         // "Deutsch - AAC - Stereo" → "Deutsch"
         if let name = phase.extra.title.components(separatedBy: " - ").first, !name.isEmpty { parts.append(name) }
         return parts.joined(separator: " · ")
     }
 
-    /// "1.2 MB of 5.6 MB · 300 KB/s" for the audio track that's loading.
-    private var audioProgressText: String? {
-        guard record.audioPhase != nil else { return nil }
+    /// "1.2 MB of 5.6 MB · 300 KB/s" for the audio track or subtitle that's loading.
+    private var extraProgressText: String? {
+        guard record.extraPhase != nil else { return nil }
         var parts: [String] = []
-        let written = ByteCountFormatter.string(fromByteCount: record.audioBytesWritten ?? 0, countStyle: .file)
-        if let expected = record.audioExpectedBytes, expected > 0 {
-            let total = ByteCountFormatter.string(fromByteCount: max(expected, record.audioBytesWritten ?? 0), countStyle: .file)
+        let written = ByteCountFormatter.string(fromByteCount: record.extraBytesWritten ?? 0, countStyle: .file)
+        if let expected = record.extraExpectedBytes, expected > 0 {
+            let total = ByteCountFormatter.string(fromByteCount: max(expected, record.extraBytesWritten ?? 0), countStyle: .file)
             parts.append(String(localized: "\(written) of \(total)"))
         } else {
             parts.append(written)

@@ -1,6 +1,7 @@
 import Foundation
 
-/// An extra file of a download: another audio track or a subtitle, loaded after the video.
+/// An extra file of a download: another audio track or a subtitle, loaded after the video
+/// (subtitles are small and usually fetched right at the start, next to the video).
 struct DownloadExtra: Codable, Equatable {
     enum Kind: String, Codable { case audio, subtitle }
     var kind: Kind
@@ -86,22 +87,22 @@ struct DownloadRecord: Codable, Identifiable, Equatable {
     var extras: [DownloadExtra]?
     /// Transcoded downloads: how far the segmented video has come.
     var hls: HLSProgress?
-    /// The extra audio track loading now (after the video): progress, bytes and expected size.
-    var audioProgress: Double? = nil
-    var audioBytesWritten: Int64? = nil
-    var audioExpectedBytes: Int64? = nil
+    /// The extra file loading now (after the video): progress, bytes and expected size.
+    var extraProgress: Double? = nil
+    var extraBytesWritten: Int64? = nil
+    var extraExpectedBytes: Int64? = nil
 
-    /// The video is done and an extra audio track is loading: which one ("1 of 2") and its name.
-    var audioPhase: (number: Int, total: Int, extra: DownloadExtra)? {
-        guard fileName != nil, let extras, let n = nextExtraIndex, extras[n].kind == .audio else { return nil }
-        let audio = extras.indices.filter { extras[$0].kind == .audio }
-        return ((audio.firstIndex(of: n) ?? 0) + 1, audio.count, extras[n])
+    /// The video is done and an extra audio track or subtitle is loading: which one ("1 of 2") and its name.
+    var extraPhase: (kind: DownloadExtra.Kind, number: Int, total: Int, extra: DownloadExtra)? {
+        guard fileName != nil, let extras, let n = nextExtraIndex else { return nil }
+        let same = extras.indices.filter { extras[$0].kind == extras[n].kind }
+        return (extras[n].kind, (same.firstIndex(of: n) ?? 0) + 1, same.count, extras[n])
     }
 
-    /// What the progress bars show: the video, or the audio track loading after it.
+    /// What the progress bars show: the video, or the audio track or subtitle loading after it.
     var displayProgress: Double {
-        guard let phase = audioPhase else { return progress }
-        if let audioProgress { return audioProgress }
+        guard let phase = extraPhase else { return progress }
+        if let extraProgress { return extraProgress }
         if let hls = phase.extra.hls, hls.segmentCount > 0 { return Double(hls.nextSegment) / Double(hls.segmentCount) }
         return 0
     }

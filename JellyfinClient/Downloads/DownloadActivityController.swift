@@ -185,14 +185,17 @@ enum DownloadActivityController {
 
         let phase: State.Phase
         let status: String
-        let audio = record.audioPhase
+        let extra = record.extraPhase
         if record.state == .downloading, record.errorMessage == nil {
             phase = .downloading
             if record.fileName == nil {
                 status = String(localized: "Downloading now")
-            } else if let audio {
-                status = audio.total > 1 ? String(localized: "Loading audio track \(audio.number) of \(audio.total)")
+            } else if let extra, extra.kind == .audio {
+                status = extra.total > 1 ? String(localized: "Loading audio track \(extra.number) of \(extra.total)")
                                          : String(localized: "Loading audio track")
+            } else if let extra {
+                status = extra.total > 1 ? String(localized: "Loading subtitle \(extra.number) of \(extra.total)")
+                                         : String(localized: "Loading subtitle")
             } else {
                 status = String(localized: "Loading audio tracks & subtitles")
             }
@@ -203,9 +206,9 @@ enum DownloadActivityController {
         let subtitle = [record.subtitle, record.qualityLabel].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
         return State(itemId: record.id, title: record.name, subtitle: subtitle.isEmpty ? nil : subtitle,
                      status: status, phase: phase, progress: record.displayProgress,
-                     bytesWritten: audio != nil ? (record.audioBytesWritten ?? 0) : record.bytesWritten,
-                     totalBytes: audio != nil ? record.audioExpectedBytes.map { max($0, record.audioBytesWritten ?? 0) } : record.expectedBytes,
-                     bytesPerSecond: record.fileName == nil || audio != nil ? manager.speeds[record.id].map { ($0 / 1024).rounded() * 1024 } : nil,
+                     bytesWritten: extra != nil ? (record.extraBytesWritten ?? 0) : record.bytesWritten,
+                     totalBytes: extra != nil ? record.extraExpectedBytes.map { max($0, record.extraBytesWritten ?? 0) } : record.expectedBytes,
+                     bytesPerSecond: record.fileName == nil || extra != nil ? manager.speeds[record.id].map { ($0 / 1024).rounded() * 1024 } : nil,
                      queued: active.count - 1, poster: poster(for: record))
     }
 

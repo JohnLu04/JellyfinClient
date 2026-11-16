@@ -1261,6 +1261,16 @@
         }
       }
     },
+    "Downloading subtitle · %lld %%": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Untertitel wird geladen · %lld %%"
+          }
+        }
+      }
+    },
     "Downloading · %lld %%": {
       "localizations": {
         "de": {
@@ -1817,6 +1827,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Lädt Tonspuren & Untertitel"
+          }
+        }
+      }
+    },
+    "Loading subtitle": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lädt Untertitel"
+          }
+        }
+      }
+    },
+    "Loading subtitle %lld of %lld": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lädt Untertitel %1$lld von %2$lld"
           }
         }
       }
@@ -3297,6 +3327,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Streaming · %@"
+          }
+        }
+      }
+    },
+    "Subtitle": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Untertitel"
+          }
+        }
+      }
+    },
+    "Subtitle %lld of %lld": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Untertitel %1$lld von %2$lld"
           }
         }
       }

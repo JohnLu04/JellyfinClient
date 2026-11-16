@@ -207,8 +207,10 @@ struct MediaDetailView: View {
                         ProgressView(value: record?.displayProgress ?? 0)
                             .progressViewStyle(.circular)
                             .controlSize(.small)
-                        if record?.audioPhase != nil {
+                        if record?.extraPhase?.kind == .audio {
                             Text("Downloading audio track · \(Int((record?.displayProgress ?? 0) * 100)) %")
+                        } else if record?.extraPhase?.kind == .subtitle {
+                            Text("Downloading subtitle · \(Int((record?.displayProgress ?? 0) * 100)) %")
                         } else {
                             Text("Downloading · \(Int((record?.progress ?? 0) * 100)) %")
                         }
