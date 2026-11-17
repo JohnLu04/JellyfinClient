@@ -59,7 +59,7 @@ struct HomeView: View {
                             if let top10, row.library.id == firstLatestRowID(of: "tvshows") {
                                 top10Row(top10, isSeries: true)
                             }
-                            self.row("Recently Added in \(row.library.name ?? "")") {
+                            self.row("Recently Added in \(row.library.name ?? "")", inLibrary: true) {
                                 ForEach(row.items) { item in
                                     NavigationLink(value: item) { PosterCard(item: item).frame(width: 118) }
                                         .buttonStyle(.plain)
@@ -130,11 +130,21 @@ struct HomeView: View {
                      onOpenSeerr: { path.append($0) })
     }
 
-    private func row<Content: View>(_ title: LocalizedStringKey, subtitle: LocalizedStringKey? = nil,
+    /// `inLibrary` puts the Library tab's symbol next to the title, for rows that only show titles
+    /// already in the library (unlike the Seerr categories further down).
+    private func row<Content: View>(_ title: LocalizedStringKey, subtitle: LocalizedStringKey? = nil, inLibrary: Bool = false,
                                     @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.title2.bold())
+                HStack(spacing: 8) {
+                    Text(title).font(.title2.bold())
+                    if inLibrary {
+                        Image(systemName: "rectangle.stack.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("In Your Library")
+                    }
+                }
                 if let subtitle {
                     Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
                 }
