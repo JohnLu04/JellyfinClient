@@ -86,6 +86,14 @@ struct TrailerHero: View {
     @State private var run = 0
 
     private var showsVideo: Bool { isStarted && isPlaying && !isPaused }
+    /// Debug builds: JF_DEBUG_TRAILER_VISIBLE=1 shows the video while it waits, to see YouTube's overlay.
+    private var debugAlwaysVisible: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.environment["JF_DEBUG_TRAILER_VISIBLE"] != nil
+        #else
+        false
+        #endif
+    }
     /// No sound while the artwork still covers the video (loading, YouTube's overlay, paused).
     private var playsMuted: Bool { isMuted || !showsVideo }
 
@@ -99,7 +107,7 @@ struct TrailerHero: View {
                     trailerView(source)
                         .id(run)
                         .frame(width: geo.size.width, height: geo.size.height)
-                        .opacity(showsVideo ? 1 : 0)
+                        .opacity(showsVideo || debugAlwaysVisible ? 1 : 0)
                         .animation(.easeInOut(duration: 0.5), value: showsVideo)
                         .allowsHitTesting(false)
                 }
@@ -350,11 +358,14 @@ struct YouTubeTrailerView: UIViewRepresentable {
           function post(m){ try{ window.webkit.messageHandlers.trailer.postMessage(m) }catch(e){} }
           window.onerror = function(msg){ post({log: String(msg)}); };
           // YouTube's title bar and "More videos" button show during the first seconds of playing and
-          // right after a pause: report the video as visible once it has played past them.
-          var revealAt = null;
+          // for longer after a pause: report the video as visible once it has really played that long.
+          // (Counted here, since getCurrentTime() lags behind after a pause.)
+          var waitLeft = null, lastTick = Date.now();
           setInterval(function(){
-            if(revealAt===null||!player||!player.getCurrentTime||player.getPlayerState()!==1){ return }
-            if(player.getCurrentTime() >= revealAt){ revealAt = null; post({visible:true}); }
+            var now = Date.now(), step = (now - lastTick) / 1000; lastTick = now;
+            if(waitLeft===null||!player||!player.getPlayerState||player.getPlayerState()!==1){ return }
+            waitLeft -= step;
+            if(waitLeft <= 0){ waitLeft = null; post({visible:true}); }
           }, 200);
           var appPaused = false;
           function setMuted(m){
@@ -368,11 +379,11 @@ struct YouTubeTrailerView: UIViewRepresentable {
               }
             }, 1500);
           }
-          function pauseTrailer(){ appPaused = true; revealAt = null; if(player&&player.pauseVideo){ player.pauseVideo() } }
+          function pauseTrailer(){ appPaused = true; waitLeft = null; if(player&&player.pauseVideo){ player.pauseVideo() } }
           function resumeTrailer(){
             if(!player||!player.playVideo){ return }
             appPaused = false;
-            revealAt = (player.getCurrentTime ? player.getCurrentTime() : 0) + 2.5;
+            waitLeft = 5.5;
             player.playVideo();
             // Resuming with sound can be blocked without a tap: continue muted instead of staying paused.
             setTimeout(function(){
@@ -388,7 +399,7 @@ struct YouTubeTrailerView: UIViewRepresentable {
               playerVars: { autoplay:1, mute:\(muted ? 1 : 0), controls:0, playsinline:1, rel:0, iv_load_policy:3, fs:0,
                             disablekb:1, modestbranding:1, cc_load_policy:0, hl:'de', origin:'\(Self.origin)' },
               events: {
-                onReady: function(e){ setMuted(\(muted)); revealAt = 3.5; e.target.playVideo(); },
+                onReady: function(e){ setMuted(\(muted)); waitLeft = 5; e.target.playVideo(); },
                 onStateChange: function(e){ post({state:e.data}); },
                 onError: function(e){ post({error:e.data}); }
               }
