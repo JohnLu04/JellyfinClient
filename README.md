@@ -4,7 +4,7 @@ Native SwiftUI client for [Jellyfin](https://jellyfin.org) servers (10.9+). iOS 
 
 ## Features
 
-- **Login** – server address (`192.168.1.10:8096`, `https://…`, pasted web URL), username/password; session token stored in the Keychain.
+- **Login** – server address (`192.168.1.10:8096`, `https://…`, pasted web URL; plain http works for any address, e.g. Tailscale `100.x.x.x` or `*.ts.net`), username/password; session token stored in the Keychain.
 - **Home** – full-width hero carousel (artwork, title logo, genres, age rating, "Play S3 · E2", favorite heart), Continue Watching and Next Up with series artwork, Recently Added per library, libraries.
 - **Title pages** (movies, series, episodes) – artwork header with a play button for the trailer, which starts only on a tap and pauses on a tap; its sound comes on together with the picture, once YouTube's title and "More videos" overlay has faded out (5 s of playing, 5.5 s after a pause) (German trailers preferred; YouTube via embedded player or local trailer files), Play/Resume and Download, description, cast, Favorite, Share (IMDb link), audio & quality options, Download Season, Episodes / More Like This tabs. **More Like This** comes from Seerr (TMDB recommendations, topped up with similar titles; an episode uses its series): titles in the library (green dot) open their page here, the rest open Seerr to request them. Without Seerr, Jellyfin's own suggestions are shown.
 - **Tabs** – Home, Favorites (favorite movies, series and episodes), Library and Request; Downloads and Settings open from buttons at the top right.
