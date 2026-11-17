@@ -5,16 +5,21 @@ import UIKit
 /// Hosts mpv's Metal layer and starts mpv once the view has a real size.
 struct MPVVideoView: UIViewRepresentable {
     let controller: MPVPlayerController
+    /// Zoomed to fill the screen (cropping the edges) instead of showing the whole picture.
+    var fillsScreen = false
 
     func makeUIView(context: Context) -> MPVLayerHostView {
         let view = MPVLayerHostView()
         view.backgroundColor = .black
+        view.clipsToBounds = true
         view.controller = controller
         view.layer.addSublayer(controller.layer)
         return view
     }
 
-    func updateUIView(_ uiView: MPVLayerHostView, context: Context) {}
+    func updateUIView(_ uiView: MPVLayerHostView, context: Context) {
+        uiView.setFillsScreen(fillsScreen)
+    }
 }
 
 /// Shows mpv's Metal layer.
@@ -24,6 +29,20 @@ struct MPVVideoView: UIViewRepresentable {
 /// ratio at the screen's full landscape resolution. Fitting it into the view is done with a scale
 /// transform, which Core Animation animates together with the rotation – mpv never notices.
 final class MPVLayerHostView: UIView {
+    /// Scales the picture to cover the view instead of fitting into it; the aspect ratio stays the same.
+    private(set) var fillsScreen = false
+    /// Animates the next scale change (a pinch), unlike a rotation, which brings its own animation.
+    private var animatesZoom = false
+
+    func setFillsScreen(_ fill: Bool) {
+        guard fill != fillsScreen else { return }
+        fillsScreen = fill
+        animatesZoom = true
+        setNeedsLayout()
+        layoutIfNeeded()
+        animatesZoom = false
+    }
+
     weak var controller: MPVPlayerController? {
         didSet {
             controller?.onVideoAspectChange = { [weak self] in
@@ -52,12 +71,16 @@ final class MPVLayerHostView: UIView {
         }
 
         // Follow the rotation animation, if one is running, so the picture turns smoothly with the screen.
-        let fit = min(bounds.width / surface.points.width, bounds.height / surface.points.height)
+        let widthScale = bounds.width / surface.points.width, heightScale = bounds.height / surface.points.height
+        let fit = fillsScreen ? max(widthScale, heightScale) : min(widthScale, heightScale)
         let running = layer.animation(forKey: "bounds.size") ?? layer.animation(forKey: "bounds")
         CATransaction.begin()
         if let running {
             CATransaction.setAnimationDuration(running.duration)
             CATransaction.setAnimationTimingFunction(running.timingFunction)
+        } else if animatesZoom {
+            CATransaction.setAnimationDuration(0.25)
+            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeInEaseOut))
         } else {
             CATransaction.setDisableActions(true)
         }
@@ -96,15 +119,20 @@ struct MPVPlayerView: View {
     @State private var showTracks = false
     @State private var showQuality = false
     @State private var showStats = false
+    /// Pinched open: the picture fills the screen; pinched closed: the whole picture shows again.
+    @State private var fillsScreen = false
+    /// The current pinch already switched the zoom, so it switches only once per gesture.
+    @State private var pinchHandled = false
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             // The show/hide tap lives on the video only, so it never competes with the menus and buttons on top.
-            MPVVideoView(controller: controller)
+            MPVVideoView(controller: controller, fillsScreen: fillsScreen)
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture { toggleControls() }
+                .simultaneousGesture(zoomGesture)
 
             // Apple's player during the hand-over to Picture in Picture (transparent otherwise).
             PiPLayerView(layer: controller.pictureInPicture.playerLayer)
@@ -462,6 +490,23 @@ struct MPVPlayerView: View {
     }
 
     // MARK: - Helpers
+
+    /// Two fingers apart zoom the picture to fill the screen, together show the whole picture again –
+    /// without stretching it: the edges that don't fit are cut off.
+    private var zoomGesture: some Gesture {
+        MagnifyGesture(minimumScaleDelta: 0.02)
+            .onChanged { value in
+                guard !pinchHandled else { return }
+                if value.magnification > 1.12, !fillsScreen {
+                    fillsScreen = true
+                    pinchHandled = true
+                } else if value.magnification < 0.88, fillsScreen {
+                    fillsScreen = false
+                    pinchHandled = true
+                }
+            }
+            .onEnded { _ in pinchHandled = false }
+    }
 
     private func toggleControls() {
         holdControls = false
