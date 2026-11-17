@@ -521,16 +521,6 @@
         }
       }
     },
-    "Autoplay Trailers": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Trailer automatisch abspielen"
-          }
-        }
-      }
-    },
     "Available": {
       "localizations": {
         "de": {
@@ -2521,6 +2511,16 @@
         }
       }
     },
+    "Pause Trailer": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trailer pausieren"
+          }
+        }
+      }
+    },
     "Paused": {
       "localizations": {
         "de": {
@@ -2621,6 +2621,16 @@
         }
       }
     },
+    "Play Trailer": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trailer abspielen"
+          }
+        }
+      }
+    },
     "Play from Beginning": {
       "localizations": {
         "de": {
@@ -2697,16 +2707,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Wiedergabe ist für diesen Benutzer nicht erlaubt."
-          }
-        }
-      }
-    },
-    "Plays a muted trailer at the top of movie and series pages, preferring German trailers.": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Spielt oben auf Film- und Serienseiten einen stummen Trailer ab, deutsche Trailer bevorzugt."
           }
         }
       }
@@ -3287,6 +3287,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Teilen"
+          }
+        }
+      }
+    },
+    "Show Trailers": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trailer anzeigen"
+          }
+        }
+      }
+    },
+    "Shows a play button at the top of movie and series pages that plays the trailer, preferring German trailers.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zeigt oben auf Film- und Serienseiten eine Wiedergabetaste, die den Trailer abspielt, deutsche Trailer bevorzugt."
           }
         }
       }

@@ -56,9 +56,9 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Toggle("Autoplay Trailers", isOn: $autoplayTrailers)
+                    Toggle("Show Trailers", isOn: $autoplayTrailers)
                 } footer: {
-                    Text("Plays a muted trailer at the top of movie and series pages, preferring German trailers.")
+                    Text("Shows a play button at the top of movie and series pages that plays the trailer, preferring German trailers.")
                 }
 
                 Section {

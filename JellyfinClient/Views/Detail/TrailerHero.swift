@@ -7,7 +7,7 @@ enum TrailerSource: Equatable {
     case file(URL)
 }
 
-/// Picks the trailer to autoplay, preferring German ones:
+/// Picks the trailer for the title page's play button, preferring German ones:
 /// German YouTube trailer → German local trailer → any YouTube trailer → any local trailer.
 ///
 /// Jellyfin fetches remote trailers from TMDb in the library's metadata language,
@@ -62,22 +62,31 @@ enum TrailerPicker {
     }
 }
 
-/// Header artwork that turns into a muted, inline trailer after a moment (like streaming apps).
+/// Header artwork with a play button when the title has a trailer (like streaming apps). The trailer
+/// only starts when the button is tapped, with sound; tapping the video pauses it and brings the
+/// artwork and the button back. When it ends, the artwork returns and the button plays it again.
 struct TrailerHero: View {
     @Environment(AppModel.self) private var app
-    @AppStorage(SettingsKeys.autoplayTrailers) private var autoplayTrailers = true
+    @AppStorage(SettingsKeys.autoplayTrailers) private var showTrailers = true
     @Environment(\.scenePhase) private var scenePhase
 
     let item: BaseItem
     let topInset: CGFloat
 
     @State private var source: TrailerSource?
+    /// The trailer's player exists (the play button was tapped and it hasn't ended or been stopped).
+    @State private var isStarted = false
+    /// The trailer runs and is shown over the artwork.
     @State private var isPlaying = false
-    @State private var isMuted = true
-    @State private var isFinished = false
-    @State private var isActive = true
-    /// The app is in the background (iOS pauses the trailer there); resume when it comes back.
-    @State private var isSuspended = false
+    /// Paused by a tap or by the app going to the background: the artwork and the play button show.
+    @State private var isPaused = false
+    @State private var isMuted = false
+    /// The trailer was shown once in this run, so resuming needs no wait for YouTube's start overlay.
+    @State private var hasShown = false
+    /// A new player for each start, so a trailer that ended plays from the beginning again.
+    @State private var run = 0
+
+    private var showsVideo: Bool { isStarted && isPlaying && !isPaused }
 
     var body: some View {
         GeometryReader { geo in
@@ -85,11 +94,12 @@ struct TrailerHero: View {
                 RemoteImage(url: app.api?.heroBackdropURL(for: item), placeholderSymbol: "film")
                     .frame(width: geo.size.width, height: geo.size.height)
 
-                if let source, isActive, !isFinished {
+                if let source, isStarted {
                     trailerView(source)
+                        .id(run)
                         .frame(width: geo.size.width, height: geo.size.height)
-                        .opacity(isPlaying ? 1 : 0)
-                        .animation(.easeInOut(duration: 0.6), value: isPlaying)
+                        .opacity(showsVideo ? 1 : 0)
+                        .animation(.easeInOut(duration: 0.5), value: showsVideo)
                         .allowsHitTesting(false)
                 }
 
@@ -98,7 +108,11 @@ struct TrailerHero: View {
                     .frame(maxHeight: .infinity, alignment: .top)
                     .allowsHitTesting(false)
 
-                if isPlaying && !isFinished && isActive {
+                centerControl
+                    .frame(width: geo.size.width, height: max(0, geo.size.height - topInset))
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+
+                if showsVideo {
                     Button {
                         isMuted.toggle()
                     } label: {
@@ -120,12 +134,43 @@ struct TrailerHero: View {
         .onReceive(NotificationCenter.default.publisher(for: .playbackWillStart)) { _ in stopTrailer() }
         .onDisappear { stopTrailer() }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .background {
-                isSuspended = true
-                // Show the artwork until the trailer really runs again, so YouTube's paused overlay never shows.
-                isPlaying = false
+            // iOS pauses the trailer in the background; it continues with a tap on the play button.
+            if phase == .background, isStarted { isPaused = true }
+        }
+    }
+
+    /// The play button over the artwork, a spinner while the trailer loads, or (while it runs) a
+    /// clear area that pauses it on a tap.
+    @ViewBuilder
+    private var centerControl: some View {
+        if showsVideo {
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture { isPaused = true }
+                .accessibilityElement()
+                .accessibilityLabel("Pause Trailer")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { isPaused = true }
+        } else if isStarted && !isPaused {
+            ProgressView()
+                .controlSize(.large)
+                .tint(.white)
+                .shadow(color: .black.opacity(0.5), radius: 6)
+                .allowsHitTesting(false)
+        } else if source != nil && showTrailers {
+            Button(action: play) {
+                Image(systemName: "play.fill")
+                    .font(.system(size: 30, weight: .bold))
+                    .foregroundStyle(.white)
+                    .offset(x: 2)
+                    .frame(width: 66, height: 66)
+                    .background(.black.opacity(0.45), in: Circle())
+                    .overlay(Circle().strokeBorder(.white.opacity(0.85), lineWidth: 2))
+                    .shadow(color: .black.opacity(0.35), radius: 8)
             }
-            if phase == .active { isSuspended = false }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Play Trailer")
+            .transition(.opacity)
         }
     }
 
@@ -134,11 +179,11 @@ struct TrailerHero: View {
         switch source {
         case let .youtube(id):
             // YouTube shows its own overlay for the first seconds; reveal the video once that's gone.
-            YouTubeTrailerView(videoID: id, muted: isMuted, paused: isSuspended,
-                               onPlaying: { reveal(after: .seconds(2.5)) }, onEnded: finish,
+            YouTubeTrailerView(videoID: id, muted: isMuted, paused: isPaused,
+                               onPlaying: { reveal(after: hasShown ? .seconds(0.4) : .seconds(2.5)) }, onEnded: finish,
                                onForcedMute: { isMuted = true })
         case let .file(url):
-            FileTrailerView(url: url, muted: isMuted, paused: isSuspended,
+            FileTrailerView(url: url, muted: isMuted, paused: isPaused,
                             onPlaying: { reveal(after: .zero) }, onEnded: finish)
         }
     }
@@ -147,42 +192,55 @@ struct TrailerHero: View {
         "\(item.id)|\(item.remoteTrailers?.count ?? -1)|\(item.localTrailerCount ?? -1)"
     }
 
+    /// Looks up the trailer right away, so the play button shows; nothing plays until it is tapped.
     private func loadTrailer() async {
-        guard autoplayTrailers, source == nil, !isFinished, let api = app.api else { return }
+        guard showTrailers, source == nil, let api = app.api else { return }
         guard item.remoteTrailers != nil || item.localTrailerCount != nil else { return }   // wait for the full item
-        // Let the page settle (and avoid loading trailers while scrolling past quickly).
-        try? await Task.sleep(for: .seconds(1.2))
+        let picked = await TrailerPicker.pick(for: item, api: api)
         guard !Task.isCancelled else { return }
-        source = await TrailerPicker.pick(for: item, api: api)
+        withAnimation(.easeInOut(duration: 0.3)) { source = picked }
         #if DEBUG
         NSLog("[Trailer] %@", "\(item.name ?? item.id): \(source.map { "\($0)" } ?? "none")")
         #endif
     }
 
+    private func play() {
+        if isStarted {
+            isPaused = false            // continue where it was paused
+            return
+        }
+        isMuted = false
+        isPaused = false
+        isPlaying = false
+        hasShown = false
+        run += 1
+        isStarted = true
+    }
+
     private func reveal(after delay: Duration) {
-        guard !isPlaying else { return }
+        guard !isPlaying || isPaused else { return }
+        let current = run
         Task {
             try? await Task.sleep(for: delay)
-            guard isActive, !isFinished else { return }
+            guard isStarted, !isPaused, run == current else { return }
             isPlaying = true
+            hasShown = true
         }
     }
 
     private func finish() {
-        withAnimation(.easeInOut(duration: 0.6)) {
-            isPlaying = false
-            isFinished = true
-        }
+        withAnimation(.easeInOut(duration: 0.5)) { stopTrailer() }
     }
 
+    /// Removes the player and shows the artwork with the play button again.
     private func stopTrailer() {
-        isActive = false
+        isStarted = false
         isPlaying = false
-        isFinished = true
+        isPaused = false
     }
 }
 
-// MARK: - YouTube (embedded player in a web view, inline and muted)
+// MARK: - YouTube (embedded player in a web view, inline)
 
 struct YouTubeTrailerView: UIViewRepresentable {
     let videoID: String
@@ -303,10 +361,19 @@ struct YouTubeTrailerView: UIViewRepresentable {
             player = new YT.Player('player', {
               videoId: '\(videoID)',
               host: 'https://www.youtube-nocookie.com',
-              playerVars: { autoplay:1, mute:1, controls:0, playsinline:1, rel:0, iv_load_policy:3, fs:0,
+              playerVars: { autoplay:1, mute:\(muted ? 1 : 0), controls:0, playsinline:1, rel:0, iv_load_policy:3, fs:0,
                             disablekb:1, modestbranding:1, cc_load_policy:0, hl:'de', origin:'\(Self.origin)' },
               events: {
-                onReady: function(e){ e.target.mute(); e.target.playVideo(); },
+                onReady: function(e){
+                  setMuted(\(muted)); e.target.playVideo();
+                  // Starting with sound can be blocked: start muted instead of not at all.
+                  setTimeout(function(){
+                    var s = player.getPlayerState ? player.getPlayerState() : -1;
+                    if(s !== 1 && s !== 3 && s !== 0 && !player.isMuted()){
+                      player.mute(); post({forcedMute:true}); player.playVideo();
+                    }
+                  }, 3000);
+                },
                 onStateChange: function(e){ post({state:e.data}); },
                 onError: function(e){ post({error:e.data}); }
               }
