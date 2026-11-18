@@ -256,6 +256,15 @@ struct JellyfinAPI {
         return result.items
     }
 
+    /// The episodes of a series that are really on the server (not Jellyfin's placeholders for missing ones),
+    /// with just their season and episode numbers.
+    func ownedEpisodes(seriesId: String) async throws -> [BaseItem] {
+        let result: ItemsResult = try await get("Shows/\(seriesId)/Episodes", [
+            "userId": userId, "isMissing": "false", "enableImages": "false", "enableUserData": "false",
+        ])
+        return result.items
+    }
+
     /// Next episodes to watch, across all series or for one series.
     /// - Parameter includeResumable: also return partly watched episodes (off for the home row,
     ///   where those already appear under "Continue Watching").

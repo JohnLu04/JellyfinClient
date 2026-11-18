@@ -117,6 +117,8 @@ struct SeerrSeason: Identifiable, Hashable, Sendable {
     let name: String
     let episodeCount: Int
     let airYear: String?
+    /// When the season's first episode aired (or will air).
+    var airDate: Date? = nil
     /// Availability of this season on your server, if Seerr knows it.
     let state: SeerrState?
 }
@@ -657,6 +659,7 @@ struct SeerrClient: Sendable {
                             name: season.name ?? (season.seasonNumber == 0 ? String(localized: "Specials") : String(localized: "Season \(season.seasonNumber)")),
                             episodeCount: season.episodeCount ?? 0,
                             airYear: TMDB.year(season.airDate),
+                            airDate: SeerrDates.date(season.airDate),
                             state: SeerrState(mediaStatus: seasonStates[season.seasonNumber] ?? nil))
             }
             .sorted { ($0.number == 0 ? Int.max : $0.number) < ($1.number == 0 ? Int.max : $1.number) }

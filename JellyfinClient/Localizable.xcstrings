@@ -2011,12 +2011,42 @@
         }
       }
     },
+    "More Episodes Available": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weitere Folgen verfügbar"
+          }
+        }
+      }
+    },
     "More Like This": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Ähnliche Titel"
+          }
+        }
+      }
+    },
+    "More Seasons Available": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weitere Staffeln verfügbar"
+          }
+        }
+      }
+    },
+    "More Seasons Requested": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weitere Staffeln angefragt"
           }
         }
       }
@@ -2881,6 +2911,16 @@
         }
       }
     },
+    "Request More": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mehr anfordern"
+          }
+        }
+      }
+    },
     "Request Movie": {
       "localizations": {
         "de": {
@@ -3101,12 +3141,62 @@
         }
       }
     },
+    "Season %@ is requested.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Staffel %@ ist angefragt."
+          }
+        }
+      }
+    },
+    "Season %@ isn't in your library yet.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Staffel %@ ist noch nicht in deiner Bibliothek."
+          }
+        }
+      }
+    },
     "Season %lld": {
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "translated",
             "value": "Staffel %lld"
+          }
+        }
+      }
+    },
+    "Season %lld: %lld episodes missing.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Staffel %1$lld: %2$lld Folgen fehlen."
+          }
+        }
+      }
+    },
+    "Season %lld: 1 episode missing.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Staffel %lld: 1 Folge fehlt."
+          }
+        }
+      }
+    },
+    "Season Incomplete": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Staffel unvollständig"
           }
         }
       }
@@ -3127,6 +3217,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Staffeln %@"
+          }
+        }
+      }
+    },
+    "Seasons %@ are requested.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Staffeln %@ sind angefragt."
+          }
+        }
+      }
+    },
+    "Seasons %@ aren't in your library yet.": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Staffeln %@ sind noch nicht in deiner Bibliothek."
+          }
+        }
+      }
+    },
+    "Seasons Incomplete": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Staffeln unvollständig"
           }
         }
       }

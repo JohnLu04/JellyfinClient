@@ -147,6 +147,8 @@ struct BaseItem: Decodable, Identifiable, Hashable {
     let seriesId: String?
     let seasonId: String?
     var seasonName: String? = nil
+    /// Last episode number of a file that holds several episodes (e.g. E01-E02).
+    var indexNumberEnd: Int? = nil
     let indexNumber: Int?
     let parentIndexNumber: Int?
     let imageTags: [String: String]?

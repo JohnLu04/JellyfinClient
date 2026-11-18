@@ -26,6 +26,9 @@ struct MediaDetailView: View {
     @State private var similar: [BaseItem] = []
     @State private var openLibraryItem: BaseItem?
     @State private var openSeerrItem: DiscoverItem?
+    /// Aired seasons or episodes this series lacks on the server (via Seerr), and its Seerr page.
+    @State private var seriesGap: (gap: SeriesGap, item: DiscoverItem)?
+    @State private var checkedSeriesGap = false
     @State private var tab: Tab = .episodes
     @State private var overviewExpanded = false
     @State private var castExpanded = false
@@ -64,6 +67,10 @@ struct MediaDetailView: View {
                         overview
                         credits
                         actionRow
+                        if let seriesGap {
+                            SeriesGapCard(gap: seriesGap.gap) { openSeerrItem = seriesGap.item }
+                                .transition(.opacity)
+                        }
                         if isSeries || hasSimilar { tabs }
                     }
                     .padding(.horizontal)
@@ -490,6 +497,11 @@ struct MediaDetailView: View {
                     ?? loadedSeasons.first { $0.userData?.played != true }?.id
                     ?? loadedSeasons.first?.id
             }
+        }
+        if isSeries, !checkedSeriesGap, let client = seerr.client {
+            checkedSeriesGap = true
+            let found = await SeriesGapChecker.check(series: item, api: api, client: client)
+            withAnimation { seriesGap = found }
         }
         await loadSeerrSimilar(api: api)
         if seerrSimilar.isEmpty, similar.isEmpty {
