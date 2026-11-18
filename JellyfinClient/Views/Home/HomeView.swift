@@ -2,6 +2,7 @@ import SwiftUI
 
 struct HomeView: View {
     @Environment(AppModel.self) private var app
+    @Environment(SeerrStore.self) private var seerr
 
     @State private var path = NavigationPath()
     @State private var hero: [HeroEntry] = []
@@ -52,11 +53,12 @@ struct HomeView: View {
                         }
 
                         ForEach(latestRows, id: \.library.id) { row in
-                            // Netflix's Top 10 right above the first movie and the first TV library.
-                            if let top10, row.library.id == firstLatestRowID(of: "movies") {
+                            // Netflix's Top 10 right above the first movie and the first TV library;
+                            // like the categories below, only with Seerr (titles not in the library are requested there).
+                            if let top10, seerr.isConnected, row.library.id == firstLatestRowID(of: "movies") {
                                 top10Row(top10, isSeries: false)
                             }
-                            if let top10, row.library.id == firstLatestRowID(of: "tvshows") {
+                            if let top10, seerr.isConnected, row.library.id == firstLatestRowID(of: "tvshows") {
                                 top10Row(top10, isSeries: true)
                             }
                             self.row("Recently Added in \(row.library.name ?? "")", inLibrary: true) {
@@ -103,6 +105,10 @@ struct HomeView: View {
             .navigationDestination(for: DiscoverItem.self) { SeerrTitleDetailView(item: $0) }
             .refreshable { await load() }
             .task { if !hasLoaded { await load() } }
+            // Seerr connected later: bring in Netflix's Top 10 without reloading everything.
+            .onChange(of: seerr.isConnected) { _, connected in
+                if connected, top10 == nil { Task { if let list = try? await NetflixTop10.load() { top10 = list } } }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .playbackDidStop)) { _ in
                 Task { await load() }
             }
@@ -195,8 +201,10 @@ struct HomeView: View {
 
     private func load() async {
         guard let api = app.api else { return }
-        // Netflix's list comes from netflix.com; never let it hold up the library rows.
-        Task { if let list = try? await NetflixTop10.load() { top10 = list } }
+        // Netflix's list comes from netflix.com; never let it hold up the library rows. Only shown with Seerr.
+        if seerr.isConnected {
+            Task { if let list = try? await NetflixTop10.load() { top10 = list } }
+        }
         do {
             async let viewsRequest = api.userViews()
             async let resumeRequest = api.resumeItems()
