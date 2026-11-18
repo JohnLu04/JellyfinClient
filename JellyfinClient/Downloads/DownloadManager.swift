@@ -415,6 +415,7 @@ final class DownloadManager: NSObject {
     ///   has never been played (it may have been watched by streaming or on another device).
     func play(_ record: DownloadRecord, title: String? = nil, serverResumeSeconds: Double? = nil) {
         guard let url = fileURL(for: record) else { return }
+        WatchedStore.shared.forget(record.id, record.seriesId)
         let start = record.lastPlayedAt == nil ? (serverResumeSeconds ?? 0) : (record.resumeSeconds ?? 0)
         let tracks = extraFiles(for: record).map { file in
             PlaybackCoordinator.OfflineTrack(kind: file.extra.kind == .audio ? .audio : .subtitle, url: file.url,

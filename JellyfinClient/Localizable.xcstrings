@@ -1951,6 +1951,26 @@
         }
       }
     },
+    "Mark as Unwatched": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Als nicht gesehen markieren"
+          }
+        }
+      }
+    },
+    "Mark as Watched": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Als gesehen markieren"
+          }
+        }
+      }
+    },
     "Max. bitrate": {
       "localizations": {
         "de": {
@@ -4127,6 +4147,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Wartet …"
+          }
+        }
+      }
+    },
+    "Watched · Mark as Unwatched": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gesehen · Als nicht gesehen markieren"
           }
         }
       }

@@ -24,6 +24,7 @@ final class PlaybackCoordinator {
 
     func play(item: BaseItem, api: JellyfinAPI, maxMbit: Double, startTicks: Int64, selection: TrackSelection) async throws {
         let player = PlayerKind.current
+        WatchedStore.shared.forget(item.id, item.seriesId)
         let session = try await PlaybackResolver.resolve(item: item, api: api, maxMbit: maxMbit,
                                                          selection: selection, player: player)
         stop()

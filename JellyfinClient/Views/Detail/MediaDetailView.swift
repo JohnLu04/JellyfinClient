@@ -90,6 +90,10 @@ struct MediaDetailView: View {
         .onReceive(NotificationCenter.default.publisher(for: .playbackDidStop)) { _ in
             Task { await refresh(); await loadEpisodes() }
         }
+        // Next episode, resume button and season list follow a watched / not watched mark.
+        .onReceive(NotificationCenter.default.publisher(for: .playedStateDidChange)) { _ in
+            Task { await refresh(); await loadEpisodes() }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .favoriteDidChange)) { note in
             guard note.object as? String == item.id, let value = note.userInfo?["isFavorite"] as? Bool else { return }
             isFavorite = value
@@ -605,11 +609,21 @@ struct EpisodeCell: View {
                             .overlay(Circle().stroke(.white.opacity(0.8), lineWidth: 1.5))
                     }
                     .frame(width: 136, height: 77)
-                    .overlay(alignment: .bottom) { if let f = episode.progressFraction { WatchProgressBar(fraction: f) } }
+                    // Fully watched: the bar is full; otherwise it shows how far you got.
+                    .overlay(alignment: .bottom) {
+                        if WatchedStore.shared.isPlayed(episode) {
+                            WatchProgressBar(fraction: 1)
+                        } else if let f = WatchedStore.shared.progress(episode) {
+                            WatchProgressBar(fraction: f)
+                        }
+                    }
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Play \(episode.name ?? "")")
+                .overlay(alignment: .topTrailing) {
+                    if WatchedStore.shared.isPlayed(episode) { WatchedEyeButton(item: episode, size: 22) }
+                }
 
                 NavigationLink(value: episode) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -637,6 +651,8 @@ struct EpisodeCell: View {
                     .lineLimit(3)
             }
         }
+        .contentShape(Rectangle())
+        .watchedContextMenu(episode)
     }
 
     @ViewBuilder

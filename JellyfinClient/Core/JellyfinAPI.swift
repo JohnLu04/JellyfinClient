@@ -321,6 +321,12 @@ struct JellyfinAPI {
         try await get("Items/\(itemId)/LocalTrailers", ["userId": userId])
     }
 
+    /// Marks an item (or a whole series) as watched or not watched; both clear the playback position.
+    @discardableResult
+    func setPlayed(itemId: String, _ played: Bool) async throws -> UserItemData {
+        try await send(played ? "POST" : "DELETE", "UserPlayedItems/\(itemId)", query: ["userId": userId])
+    }
+
     @discardableResult
     func setFavorite(itemId: String, _ favorite: Bool) async throws -> UserItemData {
         try await send(favorite ? "POST" : "DELETE", "UserFavoriteItems/\(itemId)", query: ["userId": userId])

@@ -41,16 +41,6 @@ struct WatchProgressBar: View {
     }
 }
 
-struct PlayedBadge: View {
-    var body: some View {
-        Image(systemName: "checkmark.circle.fill")
-            .symbolRenderingMode(.palette)
-            .foregroundStyle(.white, Color.accentColor)
-            .font(.title3)
-            .padding(4)
-    }
-}
-
 struct PosterCard: View {
     @Environment(AppModel.self) private var app
     let item: BaseItem
@@ -60,8 +50,11 @@ struct PosterCard: View {
             RemoteImage(url: app.api?.posterURL(for: item), placeholderSymbol: item.kind == .series ? "tv" : "film")
                 .aspectRatio(2 / 3, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(alignment: .topTrailing) { if item.userData?.played == true { PlayedBadge() } }
-                .overlay(alignment: .bottom) { if let f = item.progressFraction { WatchProgressBar(fraction: f) } }
+                .overlay(alignment: .bottom) { if let f = WatchedStore.shared.progress(item) { WatchProgressBar(fraction: f) } }
+                // Watched: an eye that marks it as not watched again.
+                .overlay(alignment: .topTrailing) {
+                    if WatchedStore.canMark(item), WatchedStore.shared.isPlayed(item) { WatchedEyeButton(item: item) }
+                }
             Text(item.name ?? "")
                 .font(.caption.weight(.medium))
                 .lineLimit(1)
@@ -69,6 +62,7 @@ struct PosterCard: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
+        .watchedContextMenu(item)
     }
 }
 
@@ -90,7 +84,7 @@ struct ContinueWatchingCard: View {
                         .frame(maxWidth: width * 0.6)
                         .padding(.bottom, 16)
                 }
-                if let fraction = item.progressFraction { WatchProgressBar(fraction: fraction) }
+                if let fraction = WatchedStore.shared.progress(item) { WatchProgressBar(fraction: fraction) }
             }
             .frame(width: width, height: width * 9 / 16)
             .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -104,6 +98,7 @@ struct ContinueWatchingCard: View {
                 .lineLimit(1)
         }
         .frame(width: width, alignment: .leading)
+        .watchedContextMenu(item)
     }
 
     /// Episodes: "S1 · E3 · Title"; movies: time left or year.

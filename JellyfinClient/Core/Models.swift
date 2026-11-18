@@ -295,6 +295,8 @@ extension Notification.Name {
     static let playbackDidStop = Notification.Name("JellyfinClient.playbackDidStop")
     /// Posted after a favorite was added or removed; `object` is the item id, `userInfo["isFavorite"]` the new state.
     static let favoriteDidChange = Notification.Name("JellyfinClient.favoriteDidChange")
+    /// Posted after an item was marked as watched or not watched; `object` is the item id.
+    static let playedStateDidChange = Notification.Name("JellyfinClient.playedStateDidChange")
     /// Posted right before a player opens, so inline trailers can stop.
     static let playbackWillStart = Notification.Name("JellyfinClient.playbackWillStart")
 }

@@ -106,6 +106,10 @@ struct HomeView: View {
             .onReceive(NotificationCenter.default.publisher(for: .playbackDidStop)) { _ in
                 Task { await load() }
             }
+            // "Continue Watching" and "Next Up" change when something is marked as watched or not.
+            .onReceive(NotificationCenter.default.publisher(for: .playedStateDidChange)) { _ in
+                Task { await load() }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .favoriteDidChange)) { note in
                 guard let id = note.object as? String, let isFavorite = note.userInfo?["isFavorite"] as? Bool else { return }
                 if isFavorite { favorites.insert(id) } else { favorites.remove(id) }
