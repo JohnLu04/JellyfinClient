@@ -568,10 +568,16 @@ struct SeerrClient: Sendable {
 
     /// TMDB keyword id for a name ("based on true story" → 9672), via Seerr's keyword search.
     func keywordID(_ name: String) async throws -> Int? {
+        let results = try await keywords(matching: name)
+        return results.first { $0.name.lowercased() == name.lowercased() }?.id ?? results.first?.id
+    }
+
+    /// TMDB keywords whose name contains `name` (TMDB's keywords are English: "dinosaur", "time travel").
+    func keywords(matching name: String) async throws -> [(id: Int, name: String)] {
         struct Keyword: Decodable { let id: Int; let name: String }
         struct KeywordPage: Decodable { let results: [Keyword] }
         let page: KeywordPage = try await get("/api/v1/search/keyword", query: [("query", name), ("page", "1")])
-        return page.results.first { $0.name.lowercased() == name.lowercased() }?.id ?? page.results.first?.id
+        return page.results.map { ($0.id, $0.name) }
     }
 
     func genres(_ type: SeerrMediaType) async throws -> [SeerrGenre] {

@@ -1811,6 +1811,26 @@
         }
       }
     },
+    "Keyword: %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stichwort: %@"
+          }
+        }
+      }
+    },
+    "Keywords: %@": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stichwörter: %@"
+          }
+        }
+      }
+    },
     "Korean Series": {
       "localizations": {
         "de": {
@@ -1967,6 +1987,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Als gesehen markieren"
+          }
+        }
+      }
+    },
+    "Matching “%@”": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Passend zu „%@“"
           }
         }
       }

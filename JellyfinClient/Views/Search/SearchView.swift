@@ -14,6 +14,8 @@ struct SearchView: View {
     @State private var seerrError: String?
     @State private var searchedTerm = ""
     @State private var selectedSuggestion: DiscoverItem?
+    /// Titles on the searched topic ("Dinosaurier" → Jurassic Park), found by TMDB keyword.
+    @State private var keywordResult: KeywordSearch.Result?
 
     private var trimmed: String { query.trimmingCharacters(in: .whitespaces) }
 
@@ -40,6 +42,15 @@ struct SearchView: View {
                 try? await Task.sleep(for: .milliseconds(350))    // debounce typing
                 guard !Task.isCancelled else { return }
                 await search()
+            }
+            // The topic search takes longer (Wikidata, then Seerr); its section joins when it's ready.
+            .task(id: query) {
+                keywordResult = nil
+                try? await Task.sleep(for: .milliseconds(500))
+                guard !Task.isCancelled, !trimmed.isEmpty else { return }
+                let found = await KeywordSearch.search(trimmed, api: app.api, client: seerr.client)
+                guard !Task.isCancelled else { return }
+                withAnimation { keywordResult = found }
             }
             .itemNavigationDestinations()
             .navigationDestination(item: $selectedSuggestion) { item in
@@ -72,7 +83,8 @@ struct SearchView: View {
             } else {
                 librarySection
                 seerrSection
-                if library.isEmpty && suggestions.isEmpty && libraryError == nil && seerrError == nil {
+                keywordSection
+                if library.isEmpty && suggestions.isEmpty && libraryError == nil && seerrError == nil && keywordExtras.isEmpty {
                     ContentUnavailableView.search(text: trimmed)
                         .padding(.top, 40)
                 }
@@ -133,6 +145,61 @@ struct SearchView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal)
+        }
+    }
+
+    private enum KeywordHit: Identifiable {
+        case library(BaseItem)
+        case seerr(DiscoverItem)
+        var id: String {
+            switch self {
+            case .library(let item): "library-\(item.id)"
+            case .seerr(let item): "seerr-\(item.id)"
+            }
+        }
+    }
+
+    /// Topic hits not already shown above (library copies first, then titles to request).
+    private var keywordExtras: [KeywordHit] {
+        guard let keywordResult, keywordResult.term == trimmed else { return [] }
+        let shownLibrary = Set(library.map(\.id))
+        let shownSeerr = Set(suggestions.map(\.id))
+        return keywordResult.library.filter { !shownLibrary.contains($0.id) }.map(KeywordHit.library)
+            + keywordResult.requestable.filter { !shownSeerr.contains($0.id) }.map(KeywordHit.seerr)
+    }
+
+    @ViewBuilder
+    private var keywordSection: some View {
+        let hits = keywordExtras
+        if let keywordResult, !hits.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Matching “\(keywordResult.term)”")
+                        .font(.title2.bold())
+                    let names = keywordResult.keywords.joined(separator: ", ")
+                    Text(keywordResult.keywords.count == 1 ? String(localized: "Keyword: \(names)") : String(localized: "Keywords: \(names)"))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal)
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 105), spacing: 12, alignment: .top)], spacing: 18) {
+                    ForEach(hits) { hit in
+                        switch hit {
+                        case .library(let item):
+                            NavigationLink(value: item) { PosterCard(item: item) }
+                                .buttonStyle(.plain)
+                        case .seerr(let item):
+                            Button { selectedSuggestion = item } label: {
+                                SeerrPosterCard(url: item.posterURL, title: item.title, kind: item.mediaType.kind,
+                                                chip: item.mediaType.label, footnote: item.year, badge: item.state)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .padding(.horizontal)
+            }
+            .transition(.opacity)
         }
     }
 

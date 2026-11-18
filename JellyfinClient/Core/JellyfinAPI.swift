@@ -204,6 +204,16 @@ struct JellyfinAPI {
         return result.items
     }
 
+    /// Movies and series with any of these tags (Jellyfin stores TMDB keywords as tags).
+    func items(tags: [String], limit: Int = 30) async throws -> [BaseItem] {
+        let result: ItemsResult = try await get("Items", [
+            "userId": userId, "tags": tags.joined(separator: "|"), "recursive": "true",
+            "includeItemTypes": "Movie,Series", "sortBy": "CommunityRating,SortName", "sortOrder": "Descending",
+            "limit": String(limit), "fields": Self.listFields + ",ProviderIds", "enableTotalRecordCount": "false",
+        ])
+        return result.items
+    }
+
     /// Genres used in the library for movies or series, with how many titles each has.
     func genres(itemType: String) async throws -> [BaseItem] {
         let result: ItemsResult = try await get("Genres", [
