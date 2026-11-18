@@ -41,6 +41,16 @@ struct WatchProgressBar: View {
     }
 }
 
+struct PlayedBadge: View {
+    var body: some View {
+        Image(systemName: "checkmark.circle.fill")
+            .symbolRenderingMode(.palette)
+            .foregroundStyle(.white, Color.accentColor)
+            .font(.title3)
+            .padding(4)
+    }
+}
+
 struct PosterCard: View {
     @Environment(AppModel.self) private var app
     let item: BaseItem
@@ -51,9 +61,8 @@ struct PosterCard: View {
                 .aspectRatio(2 / 3, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .overlay(alignment: .bottom) { if let f = WatchedStore.shared.progress(item) { WatchProgressBar(fraction: f) } }
-                // Watched: an eye that marks it as not watched again.
                 .overlay(alignment: .topTrailing) {
-                    if WatchedStore.canMark(item), WatchedStore.shared.isPlayed(item) { WatchedEyeButton(item: item) }
+                    if WatchedStore.canMark(item), WatchedStore.shared.isPlayed(item) { PlayedBadge() }
                 }
             Text(item.name ?? "")
                 .font(.caption.weight(.medium))

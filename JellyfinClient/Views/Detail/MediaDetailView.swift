@@ -621,9 +621,6 @@ struct EpisodeCell: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Play \(episode.name ?? "")")
-                .overlay(alignment: .topTrailing) {
-                    if WatchedStore.shared.isPlayed(episode) { WatchedEyeButton(item: episode, size: 22) }
-                }
 
                 NavigationLink(value: episode) {
                     VStack(alignment: .leading, spacing: 4) {

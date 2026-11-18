@@ -51,32 +51,6 @@ final class WatchedStore {
     }
 }
 
-/// The eye on artwork of a watched title; tapping it marks the title as not watched.
-struct WatchedEyeButton: View {
-    @Environment(AppModel.self) private var app
-    let item: BaseItem
-    var size: CGFloat = 26
-
-    var body: some View {
-        Button {
-            WatchedStore.shared.set(item, played: false, api: app.api)
-        } label: {
-            Image(systemName: "eye.fill")
-                .font(.system(size: size * 0.48, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: size, height: size)
-                .background(Color.accentColor, in: Circle())
-                .overlay(Circle().strokeBorder(.white.opacity(0.85), lineWidth: 1))
-                .shadow(color: .black.opacity(0.35), radius: 3)
-                .padding(5)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Watched · Mark as Unwatched")
-        .transition(.scale.combined(with: .opacity))
-    }
-}
-
 extension View {
     /// Long press: mark the title as watched or not watched.
     func watchedContextMenu(_ item: BaseItem) -> some View {

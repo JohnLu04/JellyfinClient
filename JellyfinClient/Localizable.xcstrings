@@ -4151,16 +4151,6 @@
         }
       }
     },
-    "Watched · Mark as Unwatched": {
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Gesehen · Als nicht gesehen markieren"
-          }
-        }
-      }
-    },
     "Wrong username or password, or your session has expired.": {
       "localizations": {
         "de": {
