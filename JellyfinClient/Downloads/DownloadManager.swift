@@ -778,20 +778,27 @@ final class DownloadManager: NSObject {
         }
         let api = JellyfinAPI(session: stored)
         let live = Set(liveKeys(of: id))
-        var queued = 0
-        var priority: Float = 1
+        var parts: [DownloadPart] = []
         for target in targets {
-            // Only transcodes under way: their init segment is in and the segment list is on disk.
-            guard let hls = hlsProgress(of: record, target), hls.hasInitSegment,
-                  loadSegmentList(id: id, target) != nil, hls.nextSegment < hls.segmentCount else { continue }
+            // Transcodes whose segment list is on disk. The video only once its init segment is in
+            // (requesting it restarts Jellyfin's transcode); an audio track that hasn't started yet gets
+            // its init segment first, ahead of its segments – they wait for it if they arrive earlier.
+            guard let hls = hlsProgress(of: record, target), loadSegmentList(id: id, target) != nil,
+                  hls.nextSegment < hls.segmentCount, hls.hasInitSegment || target != .video else { continue }
+            if !hls.hasInitSegment { parts.append(.initSegment(target)) }
             for n in hls.nextSegment..<hls.segmentCount {
                 let part = DownloadPart.segment(target, n)
-                guard !live.contains(part.key(for: id)), readySegmentFile(id: id, part) == nil,
-                      records[index].isActive else { continue }
-                startTransfer(part, at: index, api: api, priority: priority, quiet: true)
-                priority = max(0.05, priority - 0.01)
-                queued += 1
+                if readySegmentFile(id: id, part) == nil { parts.append(part) }
             }
+        }
+        parts = parts.filter { !live.contains($0.key(for: id)) }
+        // Earliest first: the priority falls evenly from the video's next segment to the audio track's last.
+        var queued = 0
+        for (position, part) in parts.enumerated() {
+            guard records[index].isActive else { break }
+            let priority = 1 - 0.95 * Float(position) / Float(max(parts.count - 1, 1))
+            startTransfer(part, at: index, api: api, priority: priority, quiet: true)
+            queued += 1
         }
         guard queued > 0 else { return }
         DownloadDiagnostics.log("\(id): leaving the app – queued the remaining \(queued) segment(s) in iOS' download service")
@@ -1330,9 +1337,11 @@ final class DownloadManager: NSObject {
         switch part {
         case .initSegment, .segment, .extraInit, .extraSegment:
             let target = part.hlsTarget ?? .video
-            if let n = part.segmentNumber, let hls = hlsProgress(of: records[index], target), n != hls.nextSegment {
-                // Arrived before the segment in front of it; appended once that one is there.
-                guard n > hls.nextSegment else { try? FileManager.default.removeItem(at: file); break }
+            if let n = part.segmentNumber, let hls = hlsProgress(of: records[index], target),
+               n != hls.nextSegment || !hls.hasInitSegment {
+                // Arrived before the segment in front of it (or before its track's init segment, when
+                // queued all at once on leaving the app); appended once that one is there.
+                guard n >= hls.nextSegment else { try? FileManager.default.removeItem(at: file); break }
                 break
             }
             do {
