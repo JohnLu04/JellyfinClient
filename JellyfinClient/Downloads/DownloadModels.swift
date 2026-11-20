@@ -88,6 +88,8 @@ struct DownloadRecord: Codable, Identifiable, Equatable {
     var retryCount: Int?
     /// While queued after an interruption: don't retry before this time.
     var retryAfter: Date?
+    /// Failed because the connection was gone; starts again by itself when the network is back.
+    var failedForConnection: Bool? = nil
     /// Transcoded downloads: the audio track inside the video file.
     var mainAudioIndex: Int?
     var mainAudioTitle: String?

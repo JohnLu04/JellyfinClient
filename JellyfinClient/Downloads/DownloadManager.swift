@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import Observation
 import UIKit
 import UserNotifications
@@ -40,6 +41,16 @@ final class DownloadManager: NSObject {
     private static let segmentPipeline = 2
 
     private(set) var records: [DownloadRecord] = []
+
+    // Network: a dropped connection doesn't use up a download's retries, and when it comes back the
+    // downloads waiting for it start again at once instead of after their backoff.
+    @ObservationIgnored private let pathMonitor = NWPathMonitor()
+    @ObservationIgnored private var isOnline = true
+    @ObservationIgnored private var networkSignature: String?
+    /// When the network last went away, came back or switched (Wi-Fi ↔ cellular, VPN).
+    @ObservationIgnored private var lastNetworkChange = Date.distantPast
+    /// Transfers created to start later (a retry's backoff), by part key, with their start time.
+    @ObservationIgnored private var delayedStarts: [String: Date] = [:]
     /// Current transfer speed in bytes per second, by item id.
     private(set) var speeds: [String: Double] = [:]
     /// Bumped when a series poster was saved, so the download folders show it.
@@ -175,6 +186,27 @@ final class DownloadManager: NSObject {
             let downloads = tasks.compactMap { $0 as? URLSessionDownloadTask }
             Task { @MainActor in self.reconnect(downloads) }
         }
+
+        pathMonitor.pathUpdateHandler = { path in
+            let online = path.status == .satisfied
+            let signature = path.availableInterfaces.map(\.name).sorted().joined(separator: ",")
+            Task { @MainActor in DownloadManager.shared.networkChanged(online: online, signature: signature) }
+        }
+        pathMonitor.start(queue: DispatchQueue(label: "Downloads.network"))
+        #if DEBUG
+        // JF_DEBUG_NETWORK="8:30" acts as if the network went away 8 s after launch and came back at 30 s.
+        if let script = ProcessInfo.processInfo.environment["JF_DEBUG_NETWORK"] {
+            let times = script.split(separator: ":").compactMap { Double($0) }
+            if times.count == 2 {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(times[0]))
+                    self.networkChanged(online: false, signature: "debug-offline")
+                    try? await Task.sleep(for: .seconds(times[1] - times[0]))
+                    self.networkChanged(online: true, signature: "debug-online")
+                }
+            }
+        }
+        #endif
 
         NotificationCenter.default.addObserver(
             self, selector: #selector(appDidBecomeActive),
@@ -324,6 +356,7 @@ final class DownloadManager: NSObject {
         records[index].errorMessage = nil
         records[index].retryCount = 0
         records[index].retryAfter = nil
+        records[index].failedForConnection = nil
         saveIndex()
         DownloadKeepAlive.begin(title: String(localized: "Downloading"), subtitle: records[index].name)
         pump()
@@ -672,6 +705,7 @@ final class DownloadManager: NSObject {
         if attemptStartBytes[id] == nil { attemptStartBytes[id] = records[index].bytesWritten }
         records[index].state = .downloading
         let delay = record.retryAfter.map { $0.timeIntervalSinceNow } ?? 0
+        if delay > 0, let start = record.retryAfter { delayedStarts[key] = start } else { delayedStarts[key] = nil }
         if inApp {
             inAppTasks.insert(ObjectIdentifier(task))
             // The in-app session has no delayed start; wait here (a cancelled task ignores resume()).
@@ -1415,7 +1449,23 @@ final class DownloadManager: NSObject {
             pump()
             return
         }
-        if let httpStatus, !Self.isRetryable(status: httpStatus) {
+        // Connection trouble: an error that says so, no network right now, or a failure soon after the
+        // network went away or switched (a VPN like Tailscale reconnecting, a server not yet reachable).
+        let connectionTrouble = error.map(Self.isConnectivityError) == true || !isOnline
+            || Date.now.timeIntervalSince(lastNetworkChange) < 120
+        if !isOnline {
+            // Nothing can load without a network: wait for it without using up the retries. It starts
+            // again as soon as the network is back (networkChanged); the timer is only a fallback.
+            records[index].state = .queued
+            records[index].retryAfter = .now.addingTimeInterval(30)
+            records[index].errorMessage = String(localized: "No connection – continues automatically")
+            DownloadDiagnostics.log("\(id): \(part.key(for: id)) interrupted while offline – waiting for the network")
+            saveIndex()
+            pump()
+            return
+        }
+        if let httpStatus, !Self.isRetryable(status: httpStatus),
+           !(connectionTrouble && httpStatus != 401 && httpStatus != 403) {
             giveUp(Self.message(forStatus: httpStatus))
             return
         }
@@ -1427,10 +1477,11 @@ final class DownloadManager: NSObject {
         // A dropped or missing connection isn't the server's fault: keep waiting for it much longer
         // (about two hours at the longest wait) instead of giving up after a few minutes.
         // A subtitle the server can't extract fails the same way each time: give up on it a bit sooner.
-        let limit = error.map(Self.isConnectivityError) == true ? Self.maxConnectivityRetries
+        let limit = connectionTrouble ? Self.maxConnectivityRetries
             : isExtra && (httpStatus ?? 0) >= 500 ? Self.maxExtraServerRetries : Self.maxRetries
         guard attempt <= limit else {
             giveUp(httpStatus.map(Self.message(forStatus:)) ?? error?.localizedDescription ?? String(localized: "Download failed."))
+            if connectionTrouble, part.extraIndex == nil { records[index].failedForConnection = true; saveIndex() }
             return
         }
         // Closed app, network loss, server hiccup: wait a bit, then try again. The wait happens in the
@@ -1446,6 +1497,68 @@ final class DownloadManager: NSObject {
         DownloadDiagnostics.log("\(id): \(part.key(for: id)) interrupted, retry \(attempt)/\(limit) in \(Int(delay)) s – \(reason)")
         saveIndex()
         pump()
+    }
+
+    // MARK: - Network
+
+    /// The network went away, came back or switched. Coming back (or switching) starts the downloads
+    /// that wait for it right away: retries waiting out their backoff, and those that gave up because
+    /// the connection was gone.
+    private func networkChanged(online: Bool, signature: String) {
+        let wasOnline = isOnline
+        let switched = networkSignature != nil && signature != networkSignature
+        let first = networkSignature == nil
+        isOnline = online
+        networkSignature = signature
+        guard !first else { return }
+        guard online != wasOnline || switched else { return }
+        lastNetworkChange = .now
+        DownloadDiagnostics.log(online ? "Network available (\(signature))" : "Network lost")
+        guard online, isReconnected else { return }
+        restartWaitingDownloads()
+    }
+
+    private func restartWaitingDownloads() {
+        var restarted: [String] = []
+        // Transfers already created but set to start later: cancel them and start anew now.
+        for (key, start) in delayedStarts where start > .now {
+            delayedStarts[key] = nil
+            guard let task = liveTasks[key], task.countOfBytesReceived == 0 else { continue }
+            let id = DownloadPart.parse(key).id
+            liveTasks[key] = nil
+            inflightBytes[key] = nil
+            inAppTasks.remove(ObjectIdentifier(task))
+            abandonedTasks.insert(ObjectIdentifier(task))
+            task.cancel()
+            if let index = records.firstIndex(where: { $0.id == id }), records[index].state == .downloading,
+               liveKeys(of: id).isEmpty {
+                records[index].state = .queued
+                records[index].retryAfter = nil
+                restarted.append(id)
+            }
+        }
+        for index in records.indices {
+            switch records[index].state {
+            case .queued where records[index].retryAfter != nil:
+                records[index].retryAfter = nil
+                restarted.append(records[index].id)
+            case .failed where records[index].failedForConnection == true:
+                records[index].state = .queued
+                records[index].errorMessage = nil
+                records[index].retryCount = 0
+                records[index].retryAfter = nil
+                records[index].failedForConnection = nil
+                restarted.append(records[index].id)
+            default:
+                break
+            }
+        }
+        guard !restarted.isEmpty else { return }
+        DownloadDiagnostics.log("Network back: continuing \(Set(restarted).count) download(s) now")
+        saveIndex()
+        DownloadKeepAlive.begin(title: String(localized: "Downloading"), subtitle: records.first { $0.isActive }?.name ?? "")
+        pump()
+        DownloadActivityController.start()
     }
 
     private func fail(at index: Int, message: String) {
@@ -1501,16 +1614,33 @@ final class DownloadManager: NSObject {
         status == 408 || status == 429 || status >= 500
     }
 
-    /// The connection dropped or isn't there (as opposed to the server refusing the request).
+    /// The connection dropped or isn't there (as opposed to the server refusing the request). A drop
+    /// often arrives as a socket error (connection reset, network down) rather than a URL error, also
+    /// wrapped as the underlying error of one.
     private static func isConnectivityError(_ error: NSError) -> Bool {
-        guard error.domain == NSURLErrorDomain else { return false }
-        return [NSURLErrorNetworkConnectionLost, NSURLErrorNotConnectedToInternet, NSURLErrorTimedOut,
+        switch error.domain {
+        case NSURLErrorDomain:
+            if [NSURLErrorNetworkConnectionLost, NSURLErrorNotConnectedToInternet, NSURLErrorTimedOut,
                 NSURLErrorCannotConnectToHost, NSURLErrorCannotFindHost, NSURLErrorDNSLookupFailed,
                 NSURLErrorInternationalRoamingOff, NSURLErrorDataNotAllowed, NSURLErrorCallIsActive,
-                NSURLErrorBackgroundSessionWasDisconnected, NSURLErrorSecureConnectionFailed].contains(error.code)
+                NSURLErrorBackgroundSessionWasDisconnected, NSURLErrorSecureConnectionFailed].contains(error.code) {
+                return true
+            }
+        case NSPOSIXErrorDomain:
+            // EPIPE, ENETDOWN, ENETUNREACH, ENETRESET, ECONNABORTED, ECONNRESET, ENOTCONN, ETIMEDOUT,
+            // ECONNREFUSED, EHOSTDOWN, EHOSTUNREACH
+            if [32, 50, 51, 52, 53, 54, 57, 60, 61, 64, 65].contains(error.code) { return true }
+        case "kCFErrorDomainCFNetwork", "kNWErrorDomainPOSIX", "kNWErrorDomainDNS", "kNWErrorDomainTLS":
+            return true
+        default:
+            break
+        }
+        if let underlying = error.userInfo[NSUnderlyingErrorKey] as? NSError { return isConnectivityError(underlying) }
+        return false
     }
 
     private static func isRetryable(_ error: NSError) -> Bool {
+        if isConnectivityError(error) { return true }
         guard error.domain == NSURLErrorDomain else { return false }
         switch error.code {
         case NSURLErrorBadURL, NSURLErrorUnsupportedURL, NSURLErrorUserAuthenticationRequired,

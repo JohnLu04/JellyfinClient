@@ -2321,6 +2321,16 @@
         }
       }
     },
+    "No connection – continues automatically": {
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keine Verbindung – geht automatisch weiter"
+          }
+        }
+      }
+    },
     "No pending requests.": {
       "localizations": {
         "de": {
