@@ -1,156 +1,143 @@
 import AVKit
+import CoreMedia
 import UIKit
 
-/// Picture in Picture for mpv.
+/// Picture in Picture for mpv, the way Streamyfin does it.
 ///
-/// mpv draws with Vulkan/Metal straight into its layer; iOS' Picture in Picture only takes an
-/// AVPlayerLayer or sample buffers, and apps in the background may not use the GPU at all. So for
-/// Picture in Picture the playback is handed over to an AVPlayer at the same position (the same file
-/// offline, or a stream the server prepares for Apple's player), and handed back to mpv at the new
-/// position when it ends.
+/// mpv draws into an AVSampleBufferDisplayLayer (`vo=avfoundation`), which Picture in Picture can show
+/// directly: nothing is handed over or reloaded, mpv simply plays on. With `autoStart` it also starts
+/// by itself when the app is left while a video plays. A timebase on the layer tells the system where
+/// playback is and whether it runs, for the progress bar and the play/pause button in the window.
 @MainActor
-final class MPVPictureInPicture: NSObject, AVPictureInPictureControllerDelegate {
-    /// Shown over mpv's picture while the hand-over runs; Picture in Picture animates out of it.
-    let playerLayer = AVPlayerLayer()
-
-    /// Picture in Picture is up: hide the full-screen player.
+final class MPVPictureInPicture: NSObject {
+    /// The window is up: hide the full-screen player.
     var onStarted: (() -> Void)?
     /// The user wants the full player back: show it again, then call the handler.
     var onRestore: ((@escaping (Bool) -> Void) -> Void)?
-    /// Picture in Picture ended, with where it got to (`paused` nil: it never took over). `restored` is
-    /// false when it was closed.
-    var onEnded: ((_ seconds: Double, _ paused: Bool?, _ restored: Bool) -> Void)?
-    /// It couldn't start (e.g. a format Apple's player can't play).
+    /// The window closed; `restored` is false when it was closed with ×.
+    var onEnded: ((_ restored: Bool) -> Void)?
+    /// It couldn't start.
     var onFailed: ((String) -> Void)?
+    /// About to start / just ended: the full-screen picture switches between the window's fit and the
+    /// user's zoom.
+    var onWillStart: (() -> Void)?
+    var onDidStop: (() -> Void)?
 
-    private var player: AVPlayer?
+    /// What the window's buttons do and what it shows.
+    var play: (() -> Void)?
+    var pause: (() -> Void)?
+    var skip: ((Double) -> Void)?
+
+    /// Read by the system from any thread; kept up to date by `update(...)`.
+    nonisolated(unsafe) private var cachedPlaying = false
+    nonisolated(unsafe) private var cachedDuration: Double = 0
+
+    private weak var layer: AVSampleBufferDisplayLayer?
     private var controller: AVPictureInPictureController?
-    private var observations: [NSKeyValueObservation] = []
+    private var timebase: CMTimebase?
     private var restored = false
-    private var startSeconds: Double = 0
-    private var didStart = false
-    private var isFinishing = false
-    /// The AVPlayer started playing and mpv was paused.
-    private var tookOver = false
+    /// The one controller allowed to start by itself (AVKit allows only one).
+    private static weak var automaticStartOwner: MPVPictureInPicture?
 
-    static var isSupported: Bool { AVPictureInPictureController.isPictureInPictureSupported() }
+    static var isSupported: Bool { supported }
+    private static let supported = AVPictureInPictureController.isPictureInPictureSupported()
 
-    var isRunning: Bool { player != nil }
+    var isActive: Bool { controller?.isPictureInPictureActive ?? false }
+    var debugPossible: Bool { controller?.isPictureInPicturePossible ?? false }
 
-    /// Where the Picture in Picture playback is, while it runs.
-    var currentSeconds: Double? {
-        guard let time = player?.currentTime().seconds, time.isFinite else { return nil }
-        return time
-    }
-
-    var isPaused: Bool { (player?.rate ?? 0) == 0 }
-    var durationSeconds: Double? {
-        guard let duration = player?.currentItem?.duration.seconds, duration.isFinite else { return nil }
-        return duration
-    }
-
-    func play() { player?.play() }
-    func pause() { player?.pause() }
-    func seek(to seconds: Double) {
-        player?.seek(to: CMTime(seconds: max(seconds, 0), preferredTimescale: 600))
-    }
-
-    /// Loads `url` in an AVPlayer at `seconds`, and starts Picture in Picture once it can.
-    /// `willPlay` is called when the AVPlayer takes over (pause mpv then).
-    func start(url: URL, at seconds: Double, willPlay: @escaping () -> Void) {
-        guard player == nil else { return }
-        restored = false
-        didStart = false
-        isFinishing = false
-        tookOver = false
-        startSeconds = seconds
-        let item = AVPlayerItem(url: url)
-        let player = AVPlayer(playerItem: item)
-        player.allowsExternalPlayback = true
-        self.player = player
-        playerLayer.player = player
-        playerLayer.videoGravity = .resizeAspect
-        playerLayer.opacity = 0
-
-        let controller = AVPictureInPictureController(playerLayer: playerLayer)
-        controller?.delegate = self
-        controller?.canStartPictureInPictureAutomaticallyFromInline = false
+    /// Sets up Picture in Picture for the layer mpv draws into. Call once the first frame is shown.
+    func prepare(layer: AVSampleBufferDisplayLayer, playing: Bool, at seconds: Double) {
+        guard controller == nil, Self.isSupported else { return }
+        self.layer = layer
+        var newTimebase: CMTimebase?
+        if CMTimebaseCreateWithSourceClock(allocator: kCFAllocatorDefault, sourceClock: CMClockGetHostTimeClock(),
+                                           timebaseOut: &newTimebase) == noErr, let newTimebase {
+            timebase = newTimebase
+            CMTimebaseSetTime(newTimebase, time: CMTime(seconds: max(seconds, 0), preferredTimescale: 1000))
+            CMTimebaseSetRate(newTimebase, rate: playing ? 1 : 0)
+            layer.controlTimebase = newTimebase
+        }
+        cachedPlaying = playing
+        let source = AVPictureInPictureController.ContentSource(sampleBufferDisplayLayer: layer, playbackDelegate: self)
+        let controller = AVPictureInPictureController(contentSource: source)
+        controller.delegate = self
+        controller.requiresLinearPlayback = false
         self.controller = controller
-
-        observations.append(item.observe(\.status, options: [.new]) { [weak self] item, _ in
-            Task { @MainActor in self?.statusChanged(item, willPlay: willPlay) }
-        })
-        if let controller {
-            observations.append(controller.observe(\.isPictureInPicturePossible, options: [.new]) { [weak self] _, _ in
-                Task { @MainActor in self?.tryStart() }
-            })
-        }
-        // Nothing within 20 s (no network, server busy): give up instead of waiting forever.
-        Task { [weak self] in
-            try? await Task.sleep(for: .seconds(20))
-            guard let self, self.player === player, !self.didStart else { return }
-            self.fail(String(localized: "Picture in Picture couldn't start."))
-        }
     }
 
-    /// Ends Picture in Picture without handing back (the player is closing).
-    func stop() {
-        isFinishing = true
-        controller?.stopPictureInPicture()
-        cleanUp()
-    }
-
-    // MARK: - Private
-
-    private func statusChanged(_ item: AVPlayerItem, willPlay: @escaping () -> Void) {
-        switch item.status {
-        case .readyToPlay:
-            guard let player, !tookOver else { return }
-            Task {
-                if startSeconds > 1 {
-                    await player.seek(to: CMTime(seconds: startSeconds, preferredTimescale: 600),
-                                      toleranceBefore: .zero, toleranceAfter: .zero)
-                }
-                willPlay()
-                tookOver = true
-                player.play()
-                playerLayer.opacity = 1
-                tryStart()
+    /// Start by itself when the app is left while playing (swipe home), like Safari or Streamyfin.
+    func setAutoStart(_ enabled: Bool) {
+        guard let controller else { return }
+        if enabled {
+            if Self.automaticStartOwner !== self {
+                Self.automaticStartOwner?.controller?.canStartPictureInPictureAutomaticallyFromInline = false
+                Self.automaticStartOwner = self
             }
-        case .failed:
-            fail(String(localized: "Picture in Picture isn't available for this video."))
-        default:
-            break
+        } else if Self.automaticStartOwner === self {
+            Self.automaticStartOwner = nil
         }
+        controller.canStartPictureInPictureAutomaticallyFromInline = enabled
     }
 
-    private func tryStart() {
-        // Only once Apple's player is at the right spot and playing.
-        guard let controller, player != nil, tookOver, !didStart, controller.isPictureInPicturePossible else { return }
-        didStart = true
+    /// The Picture in Picture button in the player.
+    func start() {
+        guard let controller else {
+            onFailed?(String(localized: "Picture in Picture couldn't start."))
+            return
+        }
+        guard controller.isPictureInPicturePossible else {
+            onFailed?(String(localized: "Picture in Picture isn't available for this video."))
+            return
+        }
+        restored = false
         controller.startPictureInPicture()
     }
 
-    private func fail(_ message: String) {
-        guard player != nil, !isFinishing else { return }
-        isFinishing = true
-        let seconds = currentSeconds ?? startSeconds
-        let paused: Bool? = tookOver ? isPaused : nil
-        cleanUp()
-        onFailed?(message)
-        onEnded?(seconds, paused, true)
+    /// Where playback is, for the window's progress bar.
+    func update(seconds: Double) {
+        guard let timebase, seconds >= 0 else { return }
+        CMTimebaseSetTime(timebase, time: CMTime(seconds: seconds, preferredTimescale: 1000))
+        if isActive { controller?.invalidatePlaybackState() }
     }
 
-    private func cleanUp() {
-        observations = []
-        player?.pause()
-        playerLayer.player = nil
-        playerLayer.opacity = 0
-        player = nil
+    func update(duration: Double) {
+        cachedDuration = duration
+    }
+
+    func update(playing: Bool) {
+        cachedPlaying = playing
+        if let timebase { CMTimebaseSetRate(timebase, rate: playing ? 1 : 0) }
+        if isActive { controller?.invalidatePlaybackState() }
+    }
+
+    /// Closes the window and goes back to the full player.
+    func end() {
+        restored = true
+        controller?.stopPictureInPicture()
+    }
+
+    /// Ends Picture in Picture without coming back (the player is closing).
+    func stop() {
+        onEnded = nil
+        setAutoStart(false)
+        controller?.stopPictureInPicture()
+        controller?.delegate = nil
         controller = nil
+        if let timebase { CMTimebaseSetRate(timebase, rate: 0) }
+        layer?.controlTimebase = nil
+        timebase = nil
     }
+}
 
-    // MARK: - AVPictureInPictureControllerDelegate
+// MARK: - AVPictureInPictureControllerDelegate
+
+extension MPVPictureInPicture: AVPictureInPictureControllerDelegate {
+    nonisolated func pictureInPictureControllerWillStartPictureInPicture(_ controller: AVPictureInPictureController) {
+        MainActor.assumeIsolated {
+            restored = false
+            onWillStart?()
+        }
+    }
 
     nonisolated func pictureInPictureControllerDidStartPictureInPicture(_ controller: AVPictureInPictureController) {
         MainActor.assumeIsolated { onStarted?() }
@@ -159,8 +146,8 @@ final class MPVPictureInPicture: NSObject, AVPictureInPictureControllerDelegate 
     nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController,
                                                 failedToStartPictureInPictureWithError error: Error) {
         MainActor.assumeIsolated {
-            didStart = false
-            fail(String(localized: "Picture in Picture couldn't start."))
+            onDidStop?()
+            onFailed?(String(localized: "Picture in Picture couldn't start."))
         }
     }
 
@@ -174,13 +161,38 @@ final class MPVPictureInPicture: NSObject, AVPictureInPictureControllerDelegate 
 
     nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) {
         MainActor.assumeIsolated {
-            guard !isFinishing else { return }
-            isFinishing = true
-            let seconds = currentSeconds ?? startSeconds
-            let paused = isPaused
-            let restored = restored
-            cleanUp()
-            onEnded?(seconds, paused, restored)
+            onDidStop?()
+            onEnded?(restored)
+            restored = false
         }
+    }
+}
+
+// MARK: - AVPictureInPictureSampleBufferPlaybackDelegate
+
+extension MPVPictureInPicture: AVPictureInPictureSampleBufferPlaybackDelegate {
+    nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController, setPlaying playing: Bool) {
+        Task { @MainActor in playing ? self.play?() : self.pause?() }
+    }
+
+    nonisolated func pictureInPictureControllerTimeRangeForPlayback(_ controller: AVPictureInPictureController) -> CMTimeRange {
+        let seconds = cachedDuration
+        return seconds > 0
+            ? CMTimeRange(start: .zero, duration: CMTime(seconds: seconds, preferredTimescale: 1000))
+            : CMTimeRange(start: .zero, duration: .positiveInfinity)
+    }
+
+    nonisolated func pictureInPictureControllerIsPlaybackPaused(_ controller: AVPictureInPictureController) -> Bool {
+        !cachedPlaying
+    }
+
+    nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController,
+                                                didTransitionToRenderSize newRenderSize: CMVideoDimensions) {}
+
+    nonisolated func pictureInPictureController(_ controller: AVPictureInPictureController, skipByInterval skipInterval: CMTime,
+                                                completion completionHandler: @escaping () -> Void) {
+        let seconds = CMTimeGetSeconds(skipInterval)
+        Task { @MainActor in self.skip?(seconds) }
+        completionHandler()
     }
 }

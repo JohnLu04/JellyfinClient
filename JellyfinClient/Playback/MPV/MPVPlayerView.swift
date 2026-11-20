@@ -2,7 +2,7 @@ import AVFoundation
 import SwiftUI
 import UIKit
 
-/// Hosts mpv's Metal layer and starts mpv once the view has a real size.
+/// Hosts the layer mpv draws into and starts mpv once the view has a real size.
 struct MPVVideoView: UIViewRepresentable {
     let controller: MPVPlayerController
     /// Zoomed to fill the screen (cropping the edges) instead of showing the whole picture.
@@ -18,92 +18,30 @@ struct MPVVideoView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: MPVLayerHostView, context: Context) {
-        uiView.setFillsScreen(fillsScreen)
+        controller.setFillsScreen(fillsScreen)
     }
 }
 
-/// Shows mpv's Metal layer.
-///
-/// mpv's iOS output only picks up a new surface size when it rebuilds its video output, which would
-/// interrupt playback on every rotation. So mpv always renders into a fixed surface: the video's aspect
-/// ratio at the screen's full landscape resolution. Fitting it into the view is done with a scale
-/// transform, which Core Animation animates together with the rotation – mpv never notices.
+/// Shows mpv's layer at the view's size. The layer scales the picture itself (whole picture or, zoomed,
+/// filling the screen), and follows the rotation animation so the picture turns with the screen.
 final class MPVLayerHostView: UIView {
-    /// Scales the picture to cover the view instead of fitting into it; the aspect ratio stays the same.
-    private(set) var fillsScreen = false
-    /// Animates the next scale change (a pinch), unlike a rotation, which brings its own animation.
-    private var animatesZoom = false
-
-    func setFillsScreen(_ fill: Bool) {
-        guard fill != fillsScreen else { return }
-        fillsScreen = fill
-        animatesZoom = true
-        setNeedsLayout()
-        layoutIfNeeded()
-        animatesZoom = false
-    }
-
-    weak var controller: MPVPlayerController? {
-        didSet {
-            controller?.onVideoAspectChange = { [weak self] in
-                self?.setNeedsLayout()
-                self?.layoutIfNeeded()
-            }
-        }
-    }
+    weak var controller: MPVPlayerController?
 
     override func layoutSubviews() {
         super.layoutSubviews()
         guard let controller, bounds.width > 1, bounds.height > 1 else { return }
-        let metal = controller.layer
-        let screen = window?.windowScene?.screen
-        let scale = screen?.nativeScale ?? traitCollection.displayScale
-        let surface = Self.surfaceSize(aspect: controller.videoAspect, screen: screen, scale: scale)
-
-        // The surface itself never animates: a new size only happens before or right at the start.
-        if metal.bounds.size != surface.points {
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            metal.contentsScale = scale
-            metal.bounds = CGRect(origin: .zero, size: surface.points)
-            metal.drawableSize = surface.pixels
-            CATransaction.commit()
-        }
-
-        // Follow the rotation animation, if one is running, so the picture turns smoothly with the screen.
-        let widthScale = bounds.width / surface.points.width, heightScale = bounds.height / surface.points.height
-        let fit = fillsScreen ? max(widthScale, heightScale) : min(widthScale, heightScale)
         let running = layer.animation(forKey: "bounds.size") ?? layer.animation(forKey: "bounds")
         CATransaction.begin()
         if let running {
             CATransaction.setAnimationDuration(running.duration)
             CATransaction.setAnimationTimingFunction(running.timingFunction)
-        } else if animatesZoom {
-            CATransaction.setAnimationDuration(0.25)
-            CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeInEaseOut))
         } else {
             CATransaction.setDisableActions(true)
         }
-        metal.position = CGPoint(x: bounds.midX, y: bounds.midY)
-        metal.setAffineTransform(CGAffineTransform(scaleX: fit, y: fit))
+        controller.layer.frame = bounds
         CATransaction.commit()
-
+        controller.viewSizeChanged(bounds.size)
         controller.startIfNeeded()
-    }
-
-    /// The video's aspect ratio fitted into the screen's landscape pixel size.
-    private static func surfaceSize(aspect: Double, screen: UIScreen?, scale: CGFloat) -> (points: CGSize, pixels: CGSize) {
-        let native = screen?.nativeBounds.size ?? CGSize(width: 1080, height: 1920)
-        let long = max(native.width, native.height)
-        let short = min(native.width, native.height)
-        var width = long
-        var height = (long / aspect).rounded()
-        if height > short {
-            height = short
-            width = (short * aspect).rounded()
-        }
-        let pixels = CGSize(width: max(width, 2), height: max(height, 2))
-        return (CGSize(width: pixels.width / scale, height: pixels.height / scale), pixels)
     }
 }
 
@@ -133,11 +71,6 @@ struct MPVPlayerView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { toggleControls() }
                 .simultaneousGesture(zoomGesture)
-
-            // Apple's player during the hand-over to Picture in Picture (transparent otherwise).
-            PiPLayerView(layer: controller.pictureInPicture.playerLayer)
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
 
             if (controller.isBuffering || controller.isSwitching || controller.pipState == .preparing) && controller.errorMessage == nil {
                 ProgressView()
@@ -179,6 +112,9 @@ struct MPVPlayerView: View {
             #endif
         }
         .onChange(of: controller.isPaused) { scheduleHide() }
+        // Picture in Picture starts by itself when the app is left – while this screen is up.
+        .onAppear { controller.setScreenVisible(true) }
+        .onDisappear { controller.setScreenVisible(false) }
         .alert("Picture in Picture", isPresented: Binding(
             get: { controller.pipMessage != nil },
             set: { if !$0 { controller.pipMessage = nil } })
@@ -262,20 +198,20 @@ struct MPVPlayerView: View {
         .disabled((controller.audioOptions.isEmpty && controller.subtitleOptions.isEmpty) || controller.isSwitching)
     }
 
-    /// Hands the video to Picture in Picture.
+    /// Starts Picture in Picture (or ends it while it runs, like Streamyfin).
     private var pipButton: some View {
         Button {
             hideTask?.cancel()
-            controller.startPictureInPicture()
+            controller.pipState == .active ? controller.stopPictureInPicture() : controller.startPictureInPicture()
         } label: {
-            Image(systemName: "pip.enter")
+            Image(systemName: controller.pipState == .active ? "pip.exit" : "pip.enter")
                 .font(.title3.weight(.semibold))
                 .frame(width: 48, height: 48)
                 .background(.ultraThinMaterial, in: Circle())
                 .contentShape(Circle())
         }
         .accessibilityLabel("Picture in Picture")
-        .disabled(controller.pipState != .idle || controller.isSwitching || controller.duration <= 0)
+        .disabled(controller.pipState == .preparing || controller.isSwitching || controller.duration <= 0)
     }
 
     /// Opens the live "Video Details" panel (bitrate, buffer, file size, codecs …).
@@ -679,34 +615,6 @@ struct MPVStatsPanel: View {
                 sections = controller.readStats()
                 try? await Task.sleep(for: .seconds(1))
             }
-        }
-    }
-}
-
-/// Holds the AVPlayerLayer used for the Picture in Picture hand-over, sized to the screen.
-struct PiPLayerView: UIViewRepresentable {
-    let layer: AVPlayerLayer
-
-    func makeUIView(context: Context) -> LayerView {
-        let view = LayerView()
-        view.isUserInteractionEnabled = false
-        view.backgroundColor = .clear
-        view.playerLayer = layer
-        view.layer.addSublayer(layer)
-        return view
-    }
-
-    func updateUIView(_ uiView: LayerView, context: Context) {}
-
-    final class LayerView: UIView {
-        var playerLayer: AVPlayerLayer?
-
-        override func layoutSubviews() {
-            super.layoutSubviews()
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            playerLayer?.frame = bounds
-            CATransaction.commit()
         }
     }
 }

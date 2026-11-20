@@ -1,6 +1,6 @@
+import AVFoundation
 import Foundation
-import Libmpv
-import QuartzCore
+import MPVKit
 
 enum MPVValue {
     case double(Double)
@@ -13,6 +13,8 @@ enum MPVValue {
 enum MPVEvent {
     case property(name: String, value: MPVValue)
     case fileLoaded
+    /// The first frame after loading or seeking is shown.
+    case playbackRestart
     case endFile(eof: Bool, error: String?)
 }
 
@@ -34,7 +36,9 @@ struct MPVTrack {
     }
 }
 
-/// Owns one libmpv instance rendering into a CAMetalLayer (Vulkan via MoltenVK).
+/// Owns one libmpv instance that draws into an AVSampleBufferDisplayLayer (`vo=avfoundation`, from
+/// Streamyfin's MPVKit build): VideoToolbox decodes straight into the layer, subtitles are drawn onto
+/// the frames, and Picture in Picture can take the layer over as it is – also in the background.
 /// Events are read on a private queue and delivered on the main queue through `onEvent`.
 final class MPVCore: @unchecked Sendable {
     var onEvent: ((MPVEvent) -> Void)?
@@ -50,14 +54,32 @@ final class MPVCore: @unchecked Sendable {
         return rawHandle
     }
 
-    /// Also restored after the background (see MPVPlayerController).
-    static let hardwareDecoding = "videotoolbox"
+    /// The simulator has no VideoToolbox decoder; mpv decodes in software there.
+    static let hardwareDecoding: String = {
+        #if targetEnvironment(simulator)
+        return "no"
+        #else
+        return "videotoolbox"
+        #endif
+    }()
+
+    /// Subtitles drawn onto the video frames, so they also show in Picture in Picture. Not in the
+    /// simulator (no VideoToolbox there), where mpv draws them in an overlay on the layer instead.
+    private static let compositesSubtitles: String = {
+        #if targetEnvironment(simulator)
+        return "no"
+        #else
+        return "yes"
+        #endif
+    }()
 
     private static let options: [(String, String)] = [
-        ("vo", "gpu-next"),
-        ("gpu-api", "vulkan"),
-        ("gpu-context", "moltenvk"),
+        ("vo", "avfoundation"),
+        // Right after the output, before the decoder options (as Streamyfin does it).
+        ("avfoundation-composite-osd", compositesSubtitles),
         ("hwdec", hardwareDecoding),
+        ("hwdec-codecs", "all"),
+        ("hwdec-software-fallback", "yes"),
         // mpv's iOS audio output sets the audio session to "mix with others" unless it plays exclusively.
         // A mixing app can't be the Now Playing app, so the Lock Screen / Control Center player wouldn't
         // work; it also didn't pause other apps' audio the way a video player should.
@@ -73,6 +95,10 @@ final class MPVCore: @unchecked Sendable {
         ("sub-font-size", "46"),
         ("sub-border-size", "2.5"),
         ("subs-fallback", "yes"),
+        // Subtitles sit on the video frames: sized to the video, placed within it (see the zoom).
+        ("sub-scale-with-window", "no"),
+        ("sub-use-margins", "no"),
+        ("sub-vsfilter-bidi-compat", "yes"),
     ]
 
     private static let observed: [(String, mpv_format)] = [
@@ -84,9 +110,12 @@ final class MPVCore: @unchecked Sendable {
         ("track-list/count", MPV_FORMAT_INT64),
         ("aid", MPV_FORMAT_STRING),
         ("sid", MPV_FORMAT_STRING),
+        ("video-params/w", MPV_FORMAT_INT64),
+        ("video-params/h", MPV_FORMAT_INT64),
     ]
 
-    init?(layer: CAMetalLayer) {
+    /// mpv doesn't retain the layer it draws into; it must outlive this instance (MPVPlayerController keeps it).
+    init?(layer: AVSampleBufferDisplayLayer) {
         guard let mpv = mpv_create() else { return nil }
         var wid = Int64(Int(bitPattern: Unmanaged.passUnretained(layer).toOpaque()))
         mpv_set_option(mpv, "wid", MPV_FORMAT_INT64, &wid)
@@ -224,6 +253,9 @@ final class MPVCore: @unchecked Sendable {
 
         case MPV_EVENT_FILE_LOADED:
             return .fileLoaded
+
+        case MPV_EVENT_PLAYBACK_RESTART:
+            return .playbackRestart
 
         case MPV_EVENT_END_FILE:
             guard let endFile = event.data?.assumingMemoryBound(to: mpv_event_end_file.self).pointee else { return nil }

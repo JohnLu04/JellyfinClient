@@ -1,26 +1,6 @@
+import AVFoundation
 import Observation
-import QuartzCore
 import UIKit
-
-/// CAMetalLayer that ignores MoltenVK's temporary 1×1 drawable size (prevents flicker / stuck 1×1 output)
-/// and applies EDR changes on the main thread. See https://github.com/mpv-player/mpv/pull/13651
-final class MPVMetalLayer: CAMetalLayer {
-    override var drawableSize: CGSize {
-        get { super.drawableSize }
-        set { if Int(newValue.width) > 1 && Int(newValue.height) > 1 { super.drawableSize = newValue } }
-    }
-
-    override var wantsExtendedDynamicRangeContent: Bool {
-        get { super.wantsExtendedDynamicRangeContent }
-        set {
-            if Thread.isMainThread {
-                super.wantsExtendedDynamicRangeContent = newValue
-            } else {
-                DispatchQueue.main.sync { super.wantsExtendedDynamicRangeContent = newValue }
-            }
-        }
-    }
-}
 
 /// State and controls for one mpv playback, plus audio/subtitle switching.
 ///
@@ -50,7 +30,7 @@ final class MPVPlayerController: PlaybackEngine {
     private(set) var selectedSubtitle: Int?
     /// Streaming quality of this playback in Mbit/s (0 = original, -1 = automatic); nil for local files.
     private(set) var currentQuality: Double?
-    /// Picture in Picture: idle, preparing (Apple's player loads) or active.
+    /// Picture in Picture: idle, preparing (starting) or active.
     enum PiPState { case idle, preparing, active }
     private(set) var pipState: PiPState = .idle
     /// Why Picture in Picture didn't start, shown briefly.
@@ -69,10 +49,18 @@ final class MPVPlayerController: PlaybackEngine {
     @ObservationIgnored var onPiPRestore: ((@escaping (Bool) -> Void) -> Void)?
     @ObservationIgnored var onPiPClosed: (() -> Void)?
     @ObservationIgnored let pictureInPicture = MPVPictureInPicture()
-    /// The stream prepared for Apple's player during Picture in Picture; stopped afterwards.
-    @ObservationIgnored private var pipSession: PlaybackSession?
+    /// The player screen is up: Picture in Picture may start by itself when the app is left.
+    @ObservationIgnored private var isScreenVisible = false
 
-    @ObservationIgnored let layer = MPVMetalLayer()
+    /// What mpv draws into (`vo=avfoundation`); Picture in Picture shows the same layer.
+    @ObservationIgnored let layer = AVSampleBufferDisplayLayer()
+    /// Zoomed to fill the screen (pinch) instead of showing the whole picture.
+    @ObservationIgnored private(set) var fillsScreen = false
+    @ObservationIgnored private var viewSize = CGSize.zero
+    @ObservationIgnored private var videoSize = CGSize.zero
+    @ObservationIgnored private var layerStatusObservation: NSKeyValueObservation?
+    /// Decoder resets after the layer failed (bounded, see recoverDecoder).
+    @ObservationIgnored private var decoderResets = 0
     @ObservationIgnored private var core: MPVCore?
     /// For the "Video Details" panel (MPVStats.swift).
     var statsCore: MPVCore? { core }
@@ -84,9 +72,6 @@ final class MPVPlayerController: PlaybackEngine {
     @ObservationIgnored private let offlineTracks: [PlaybackCoordinator.OfflineTrack]
     @ObservationIgnored private let embeddedAudioTitle: String?
     @ObservationIgnored private var didAddOfflineTracks = false
-    @ObservationIgnored private var lifecycleObservers: [NSObjectProtocol] = []
-    /// Whether the hardware decoder was in use when the app went to the background (see observeLifecycle).
-    @ObservationIgnored private var hardwareDecoderBeforeBackground: String?
     /// Automatic quality: tells the adaptive stream how much is buffered, every second.
     @ObservationIgnored private var bufferReporter: Task<Void, Never>?
 
@@ -98,14 +83,9 @@ final class MPVPlayerController: PlaybackEngine {
         self.url = url
         self.startSeconds = startSeconds
         self.session = session
-        let video = session?.source.mediaStreams?.first { $0.type == "Video" }
-        if let width = video?.width, let height = video?.height, width > 0, height > 0 {
-            videoAspect = Double(width) / Double(height)
-        } else {
-            videoAspect = 16.0 / 9.0
-        }
-        layer.framebufferOnly = true
+        layer.videoGravity = .resizeAspect
         layer.backgroundColor = UIColor.black.cgColor
+        if #available(iOS 17.0, *) { layer.wantsExtendedDynamicRangeContent = true }
         if let session {
             audioOptions = session.audioStreams.map { TrackOption(id: $0.index, label: $0.label) }
             subtitleOptions = session.subtitleStreams.map { TrackOption(id: $0.index, label: $0.label) }
@@ -126,7 +106,8 @@ final class MPVPlayerController: PlaybackEngine {
         core.onEvent = { [weak self] event in
             MainActor.assumeIsolated { self?.handle(event) }
         }
-        observeLifecycle()
+        observeLayerStatus()
+        setUpPictureInPicture()
         load(url, from: startSeconds)
         #if DEBUG
         debugScript()
@@ -141,41 +122,66 @@ final class MPVPlayerController: PlaybackEngine {
         }
     }
 
-    /// Display aspect ratio of the video. mpv renders into a surface of exactly this shape, so the
-    /// picture fills it without bars and rotating only rescales the finished surface (see MPVLayerHostView).
-    @ObservationIgnored private(set) var videoAspect: Double
-    /// Called when mpv reports a different aspect than expected; the view then re-lays out the surface.
-    @ObservationIgnored var onVideoAspectChange: (() -> Void)?
+    // MARK: - Picture size
+
+    /// The video view's size changed (layout, rotation): keeps the subtitles inside the visible part.
+    func viewSizeChanged(_ size: CGSize) {
+        guard size != viewSize else { return }
+        viewSize = size
+        applySubtitlePosition()
+    }
+
+    /// Pinch: fill the screen (edges cut off, never stretched) or show the whole picture.
+    func setFillsScreen(_ fill: Bool) {
+        guard fill != fillsScreen else { return }
+        fillsScreen = fill
+        guard !pictureInPicture.isActive else { return }    // the window always shows the whole picture
+        applyGravity(fill)
+    }
+
+    private func applyGravity(_ fill: Bool) {
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0.25)
+        layer.videoGravity = fill ? .resizeAspectFill : .resizeAspect
+        CATransaction.commit()
+        applySubtitlePosition(fill: fill)
+    }
+
+    /// Subtitles are drawn onto the video frames, so zooming would cut off their bottom: move them up into
+    /// the part that stays on screen.
+    private func applySubtitlePosition(fill: Bool? = nil) {
+        let fill = fill ?? (fillsScreen && !pictureInPicture.isActive)
+        var position = 100
+        if fill, videoSize.width > 0, videoSize.height > 0, viewSize.width > 0, viewSize.height > 0 {
+            let scale = max(viewSize.width / videoSize.width, viewSize.height / videoSize.height)
+            let shown = min(1, viewSize.height / (videoSize.height * scale))     // share of the height on screen
+            if shown < 0.99 { position = Int((100 * (1 - (1 - shown) / 2)).rounded(.down)) - 1 }
+        }
+        core?.setString("sub-pos", String(position))
+    }
 
     // MARK: - Controls
 
     func togglePause() {
-        if pictureInPicture.isRunning {
-            pictureInPicture.isPaused ? pictureInPicture.play() : pictureInPicture.pause()
-            return
-        }
         core?.setFlag("pause", !isPaused)
     }
 
     func play() {
-        if pictureInPicture.isRunning { pictureInPicture.play() } else { core?.setFlag("pause", false) }
+        core?.setFlag("pause", false)
     }
 
     func pause() {
-        if pictureInPicture.isRunning { pictureInPicture.pause() } else { core?.setFlag("pause", true) }
+        core?.setFlag("pause", true)
     }
 
     func seek(to seconds: Double) {
-        if pictureInPicture.isRunning { pictureInPicture.seek(to: seconds); return }
         position = seconds
+        pictureInPicture.update(seconds: seconds)
         core?.command(["seek", String(format: "%.3f", seconds), "absolute"])
     }
 
     func skip(by seconds: Double) {
-        if pictureInPicture.isRunning {
-            pictureInPicture.seek(to: (pictureInPicture.currentSeconds ?? position) + seconds)
-            return
-        }
+        pictureInPicture.update(seconds: max(0, position + seconds))
         core?.command(["seek", String(format: "%.3f", seconds), "relative"])
     }
 
@@ -207,65 +213,88 @@ final class MPVPlayerController: PlaybackEngine {
 
     // MARK: - Picture in Picture
 
-    /// Hands playback to Apple's player and starts Picture in Picture (see MPVPictureInPicture).
+    /// The Picture in Picture button: the window takes over the picture mpv draws (nothing reloads).
     func startPictureInPicture() {
         guard pipState == .idle, MPVPictureInPicture.isSupported, errorMessage == nil else { return }
-        pipState = .preparing
+        pictureInPicture.start()
+    }
+
+    /// Back from the window to the full player (the button while Picture in Picture runs).
+    func stopPictureInPicture() {
+        pictureInPicture.end()
+    }
+
+    /// The player screen appeared or went away (dismissed while Picture in Picture runs, or closed).
+    func setScreenVisible(_ visible: Bool) {
+        isScreenVisible = visible
+        pictureInPicture.setAutoStart(visible && didShowFirstFrame)
+    }
+
+    @ObservationIgnored private var didShowFirstFrame = false
+
+    private func setUpPictureInPicture() {
         let pip = pictureInPicture
+        pip.play = { [weak self] in self?.play() }
+        pip.pause = { [weak self] in self?.pause() }
+        pip.skip = { [weak self] seconds in self?.skip(by: seconds) }
+        pip.onWillStart = { [weak self] in
+            guard let self else { return }
+            self.pipState = .preparing
+            pip.update(seconds: self.position)
+            if self.fillsScreen { self.applyGravity(false) }       // the window shows the whole picture
+        }
         pip.onStarted = { [weak self] in
             guard let self else { return }
+            self.debugLog("pip started")
             self.pipState = .active
+            pip.update(seconds: self.position)
             self.onPiPStarted?()
         }
         pip.onRestore = { [weak self] completion in
             guard let self, let onPiPRestore = self.onPiPRestore else { return completion(true) }
             onPiPRestore(completion)
         }
-        pip.onFailed = { [weak self] message in self?.pipMessage = message }
-        pip.onEnded = { [weak self] seconds, paused, restored in self?.pictureInPictureEnded(at: seconds, paused: paused, restored: restored) }
-        let wasPaused = isPaused
-        Task {
-            var url = self.url
-            if let session {
-                // A stream for Apple's player (mpv's may be a format it can't play).
-                do {
-                    let native = try await PlaybackResolver.resolve(item: session.item, api: session.api, maxMbit: session.maxMbit,
-                                                                    selection: session.selection, player: .native)
-                    pipSession = native
-                    url = native.url
-                } catch {
-                    pipState = .idle
-                    pipMessage = String(localized: "Picture in Picture couldn't start.")
-                    return
-                }
-            }
-            pip.start(url: url, at: position) { [weak self] in
-                guard let self else { return }
+        pip.onFailed = { [weak self] message in
+            self?.debugLog("pip failed: \(message)")
+            self?.pipState = .idle
+            self?.pipMessage = message
+        }
+        pip.onDidStop = { [weak self] in
+            guard let self else { return }
+            if self.fillsScreen { self.applyGravity(true) }
+        }
+        pip.onEnded = { [weak self] restored in
+            guard let self else { return }
+            self.debugLog("pip ended, restored=\(restored)")
+            self.pipState = .idle
+            guard restored else {
+                // Closed with ×: stop like the player's close button.
                 self.core?.setFlag("pause", true)
-                if wasPaused { pip.pause() }
+                self.onPiPClosed?()
+                return
             }
+            self.onStateChange?()
         }
     }
 
-    private func pictureInPictureEnded(at seconds: Double, paused: Bool?, restored: Bool) {
-        pipState = .idle
-        if let native = pipSession {
-            pipSession = nil
-            native.adaptive?.stop()
-            if native.playMethod != .directPlay, let id = native.playSessionId {
-                Task { try? await native.api.stopTranscoding(playSessionId: id) }
+    /// The first frame is on screen: Picture in Picture can take the layer over from now on.
+    private func firstFrameShown() {
+        guard !didShowFirstFrame else { return }
+        didShowFirstFrame = true
+        pictureInPicture.prepare(layer: layer, playing: !isPaused, at: position)
+        pictureInPicture.update(duration: duration)
+        pictureInPicture.setAutoStart(isScreenVisible)
+        debugLog("pip prepared: supported=\(MPVPictureInPicture.isSupported) screenVisible=\(isScreenVisible)")
+        #if DEBUG
+        // JF_DEBUG_PIP=8 starts Picture in Picture 8 s after the first frame.
+        if let delay = ProcessInfo.processInfo.environment["JF_DEBUG_PIP"].flatMap(Double.init) {
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(delay))
+                self?.debugLog("pip debug start, possible=\(self?.pictureInPicture.debugPossible ?? false)")
+                self?.startPictureInPicture()
             }
         }
-        guard let paused else { return }     // Apple's player never took over: mpv just goes on
-        position = seconds
-        core?.command(["seek", String(format: "%.3f", seconds), "absolute"])
-        guard restored else {
-            core?.setFlag("pause", true)
-            onPiPClosed?()
-            return
-        }
-        core?.setFlag("pause", paused)
-        onStateChange?()
+        #endif
     }
 
     func selectAudio(_ id: Int) {
@@ -309,24 +338,15 @@ final class MPVPlayerController: PlaybackEngine {
 
     // MARK: - PlaybackEngine
 
-    var currentSeconds: Double { pictureInPicture.currentSeconds ?? position }
-    var isPausedNow: Bool { pictureInPicture.isRunning ? pictureInPicture.isPaused : isPaused }
-    var durationSeconds: Double { duration > 0 ? duration : (pictureInPicture.durationSeconds ?? 0) }
+    var currentSeconds: Double { position }
+    var isPausedNow: Bool { isPaused }
+    var durationSeconds: Double { duration }
 
     func teardown() {
-        pictureInPicture.onEnded = nil
         pictureInPicture.stop()
-        if let native = pipSession {
-            pipSession = nil
-            native.adaptive?.stop()
-            if native.playMethod != .directPlay, let id = native.playSessionId {
-                Task { try? await native.api.stopTranscoding(playSessionId: id) }
-            }
-        }
+        layerStatusObservation = nil
         bufferReporter?.cancel()
         bufferReporter = nil
-        lifecycleObservers.forEach(NotificationCenter.default.removeObserver)
-        lifecycleObservers = []
         core?.onEvent = nil
         core?.destroy()
         core = nil
@@ -340,14 +360,23 @@ final class MPVPlayerController: PlaybackEngine {
             switch (name, value) {
             case let ("time-pos", .double(seconds)):
                 // mpv reports every frame; ~5 updates per second are plenty for the UI and keep it responsive.
-                if abs(seconds - position) >= 0.2 { position = seconds }
+                if abs(seconds - position) >= 0.2 {
+                    position = seconds
+                    if pictureInPicture.isActive { pictureInPicture.update(seconds: seconds) }
+                }
                 if isBuffering && !isSwitching { isBuffering = false }
-            case let ("video-params/aspect", .double(aspect)):
-                adoptVideoAspect(aspect)
+            case let ("video-params/w", .int(width)):
+                videoSize.width = CGFloat(width)
+                applySubtitlePosition()
+            case let ("video-params/h", .int(height)):
+                videoSize.height = CGFloat(height)
+                applySubtitlePosition()
             case let ("duration", .double(seconds)):
                 duration = seconds
+                pictureInPicture.update(duration: seconds)
             case let ("pause", .flag(paused)):
                 isPaused = paused
+                pictureInPicture.update(playing: !paused)
                 onStateChange?()
             case let ("paused-for-cache", .flag(buffering)):
                 isBuffering = buffering
@@ -365,8 +394,12 @@ final class MPVPlayerController: PlaybackEngine {
             default:
                 break
             }
+        case .playbackRestart:
+            firstFrameShown()
+            if pictureInPicture.isActive { pictureInPicture.update(seconds: position) }
         case .fileLoaded:
             isSwitching = false
+            decoderResets = 0
             addOfflineTracksIfNeeded()
             applySelection()
             if !didStart {
@@ -381,18 +414,6 @@ final class MPVPlayerController: PlaybackEngine {
                 errorMessage = String(localized: "Playback failed: \(error)")
             }
         }
-    }
-
-    /// Only needed when the guessed aspect was wrong (local files, anamorphic video): resize the surface
-    /// once and let mpv set up its output again. Happens right at the start, never on rotation.
-    private func adoptVideoAspect(_ aspect: Double) {
-        guard aspect.isFinite, aspect > 0.1, abs(aspect - videoAspect) / videoAspect > 0.02 else { return }
-        debugLog("video aspect \(videoAspect) -> \(aspect)")
-        videoAspect = aspect
-        onVideoAspectChange?()
-        guard let core, let track = core.getString("vid"), track != "no" else { return }
-        core.setString("vid", "no")
-        core.setString("vid", track)
     }
 
     // MARK: - Tracks
@@ -557,35 +578,24 @@ final class MPVPlayerController: PlaybackEngine {
         #endif
     }
 
-    // MARK: - Background
+    // MARK: - Decoder recovery
 
-    /// The screen goes off or the app to the background: the sound plays on, the picture can't be drawn
-    /// (no GPU in the background). The video track stays selected, so mpv keeps buffering video and audio
-    /// and continues seamlessly on return; only the output is swapped for a null one. Switching the track
-    /// off instead (`vid=no`) made mpv buffer audio only and throw the buffer away to load the picture
-    /// again when the screen came back on.
-    ///
-    /// Should the hardware decoder fail in the background, mpv falls back to software decoding by itself
-    /// (`hwdec-software-fallback`); it's brought back on return.
-    private func observeLifecycle() {
-        let center = NotificationCenter.default
-        lifecycleObservers.append(center.addObserver(forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, let core = self.core else { return }
-                self.hardwareDecoderBeforeBackground = core.getString("hwdec-current")
-                core.setString("vo", "null")
-            }
-        })
-        lifecycleObservers.append(center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, let core = self.core else { return }
-                core.setString("vo", "gpu-next")
-                if let before = self.hardwareDecoderBeforeBackground, before != "no", core.getString("hwdec-current") == "no" {
-                    core.setString("hwdec", "no")
-                    core.setString("hwdec", MPVCore.hardwareDecoding)
-                }
-                self.hardwareDecoderBeforeBackground = nil
-            }
-        })
+    /// iOS may end VideoToolbox decoding when the app goes to the background, the screen locks or memory
+    /// runs low; the layer then fails and the picture stays black (also in Picture in Picture). Restart
+    /// the decoder – a few times at most, after that mpv stays on software decoding (as Streamyfin does).
+    private func observeLayerStatus() {
+        layerStatusObservation = layer.observe(\.status, options: [.new]) { [weak self] layer, _ in
+            guard layer.status == .failed else { return }
+            Task { @MainActor in self?.recoverDecoder() }
+        }
+    }
+
+    private func recoverDecoder() {
+        guard let core, decoderResets < 3 else { return }
+        decoderResets += 1
+        debugLog("display layer failed, resetting decoder (\(decoderResets)/3)")
+        if layer.requiresFlushToResumeDecoding { layer.flush() }
+        core.setString("hwdec", "no")
+        if decoderResets < 3 { core.setString("hwdec", MPVCore.hardwareDecoding) }
     }
 }

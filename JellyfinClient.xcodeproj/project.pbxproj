@@ -8,7 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		4A1F00000000000000000040 /* DownloadActivity.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 4A1F00000000000000000031 /* DownloadActivity.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
-		4A1F00000000000000000020 /* MPVKit in Frameworks */ = {isa = PBXBuildFile; productRef = 4A1F00000000000000000021 /* MPVKit */; };
+		4A1F00000000000000000020 /* MPVKitAV in Frameworks */ = {isa = PBXBuildFile; productRef = 4A1F00000000000000000021 /* MPVKitAV */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -65,7 +65,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				4A1F00000000000000000020 /* MPVKit in Frameworks */,
+				4A1F00000000000000000020 /* MPVKitAV in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -123,7 +123,7 @@
 			);
 			name = JellyfinClient;
 			packageProductDependencies = (
-				4A1F00000000000000000021 /* MPVKit */,
+				4A1F00000000000000000021 /* MPVKitAV */,
 			);
 			productName = JellyfinClient;
 			productReference = 4A1F00000000000000000001 /* JellyfinClient.app */;
@@ -179,7 +179,7 @@
 			mainGroup = 4A1F00000000000000000004;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				4A1F00000000000000000022 /* XCRemoteSwiftPackageReference "MPVKit" */,
+				4A1F00000000000000000022 /* XCLocalSwiftPackageReference "Packages/MPVKitAV" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 4A1F00000000000000000005 /* Products */;
@@ -415,22 +415,18 @@
 		};
 /* End XCConfigurationList section */
 
-/* Begin XCRemoteSwiftPackageReference section */
-		4A1F00000000000000000022 /* XCRemoteSwiftPackageReference "MPVKit" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/mpvkit/MPVKit";
-			requirement = {
-				kind = exactVersion;
-				version = "1.1.0-n9.0.2";
-			};
+/* Begin XCLocalSwiftPackageReference section */
+		4A1F00000000000000000022 /* XCLocalSwiftPackageReference "Packages/MPVKitAV" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/MPVKitAV;
 		};
-/* End XCRemoteSwiftPackageReference section */
+/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		4A1F00000000000000000021 /* MPVKit */ = {
+		4A1F00000000000000000021 /* MPVKitAV */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 4A1F00000000000000000022 /* XCRemoteSwiftPackageReference "MPVKit" */;
-			productName = MPVKit;
+			package = 4A1F00000000000000000022 /* XCLocalSwiftPackageReference "Packages/MPVKitAV" */;
+			productName = MPVKitAV;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

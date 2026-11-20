@@ -141,7 +141,9 @@ final class PlaybackCoordinator {
                 NowPlayingController.shared.refresh()
             }
             mpv.onFinished = { [weak self] in self?.stop() }
-            mpv.onPiPStarted = { [weak self] in self?.parkPlayer() }
+            // Unlike Apple's player, the player screen stays up during Picture in Picture (as in Streamyfin):
+            // the window shows the layer mpv draws into, which has to stay in the app's window for that.
+            mpv.onPiPStarted = { [weak self] in self?.updateIdleTimer() }
             mpv.onPiPRestore = { [weak self] completion in
                 guard let self, let parked = self.parkedController else { return completion(true) }
                 self.parkedController = nil
