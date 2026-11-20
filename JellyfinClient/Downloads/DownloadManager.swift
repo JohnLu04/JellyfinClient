@@ -169,6 +169,10 @@ final class DownloadManager: NSObject {
         config.allowsConstrainedNetworkAccess = true
         config.timeoutIntervalForRequest = 300          // transcoding can pause between chunks
         config.timeoutIntervalForResource = 7 * 24 * 60 * 60
+        // Two transfers at a time, like the app's own segment pipeline: the segments queued when the
+        // app is left (queueRemainingSegments) then load in order without Jellyfin restarting its
+        // transcode for requests too far ahead.
+        config.httpMaximumConnectionsPerHost = 2
         let queue = OperationQueue()
         queue.maxConcurrentOperationCount = 1
         queue.name = "Downloads"
@@ -214,6 +218,9 @@ final class DownloadManager: NSObject {
         NotificationCenter.default.addObserver(
             self, selector: #selector(appDidEnterBackground),
             name: UIApplication.didEnterBackgroundNotification, object: nil)
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(appWillResignActive),
+            name: UIApplication.willResignActiveNotification, object: nil)
         NotificationCenter.default.addObserver(
             self, selector: #selector(protectedDataAvailable),
             name: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil)
@@ -633,7 +640,8 @@ final class DownloadManager: NSObject {
         DownloadKeepAlive.update(title: String(localized: "Downloading"), subtitle: record.name)
     }
 
-    private func startTransfer(_ part: DownloadPart, at index: Int, api: JellyfinAPI) {
+    /// `quiet`: part of a batch queued when leaving the app (logged once, not per segment).
+    private func startTransfer(_ part: DownloadPart, at index: Int, api: JellyfinAPI, priority: Float? = nil, quiet: Bool = false) {
         let record = records[index]
         let id = record.id
         let key = part.key(for: id)
@@ -695,9 +703,10 @@ final class DownloadManager: NSObject {
                 records[index].bytesWritten = 0
                 records[index].progress = 0
             }
-            DownloadDiagnostics.log("\(id): starting \(what)\(inApp ? " (in the app, kept running in the background)" : "")")
+            if !quiet { DownloadDiagnostics.log("\(id): starting \(what)\(inApp ? " (in the app, kept running in the background)" : "")") }
         }
         task.taskDescription = key
+        if let priority { task.priority = priority }
         if part == .original, let expected = record.expectedBytes, expected > 0 {
             task.countOfBytesClientExpectsToReceive = expected
         }
@@ -746,6 +755,43 @@ final class DownloadManager: NSObject {
         } else {
             DownloadDiagnostics.log("App in the background without keep-alive – iOS' download service continues, but may postpone new parts")
         }
+    }
+
+    /// Leaving the app: queue every remaining segment of the running transcode in iOS' download service
+    /// now, while the app still counts as in the foreground. Transfers the app creates later from the
+    /// background are started whenever iOS sees fit – often only once the app is opened again – so the
+    /// download would stall as soon as iOS stops keeping the app running. Queued now, iOS loads them on
+    /// its own, two at a time and earliest first; the app files them whenever it gets to run.
+    @objc private func appWillResignActive() {
+        guard isReconnected, !indexUnavailable,
+              let index = records.firstIndex(where: { $0.state == .downloading && $0.mbit != nil }),
+              let stored = SessionStorage.load() else { return }
+        let record = records[index]
+        let id = record.id
+        var targets: [HLSTarget] = record.fileName == nil ? [.video] : []
+        for n in (record.extras ?? []).indices where record.extras?[n].isPending == true && extraUsesHLS(record, n) {
+            targets.append(.extra(n))
+        }
+        let api = JellyfinAPI(session: stored)
+        let live = Set(liveKeys(of: id))
+        var queued = 0
+        var priority: Float = 1
+        for target in targets {
+            // Only transcodes under way: their init segment is in and the segment list is on disk.
+            guard let hls = hlsProgress(of: record, target), hls.hasInitSegment,
+                  loadSegmentList(id: id, target) != nil, hls.nextSegment < hls.segmentCount else { continue }
+            for n in hls.nextSegment..<hls.segmentCount {
+                let part = DownloadPart.segment(target, n)
+                guard !live.contains(part.key(for: id)), readySegmentFile(id: id, part) == nil,
+                      records[index].isActive else { continue }
+                startTransfer(part, at: index, api: api, priority: priority, quiet: true)
+                priority = max(0.05, priority - 0.01)
+                queued += 1
+            }
+        }
+        guard queued > 0 else { return }
+        DownloadDiagnostics.log("\(id): leaving the app – queued the remaining \(queued) segment(s) in iOS' download service")
+        saveIndex()
     }
 
     /// The app is about to be suspended: cancel the in-app transfers and start them again in the
