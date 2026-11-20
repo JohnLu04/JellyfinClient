@@ -851,7 +851,35 @@ final class DownloadManager: NSObject {
         done()
     }
 
+    /// What iOS' download service is doing right now: how many transfers it holds, which receive data
+    /// and how much has arrived – shows in the log whether a download moves while the app is away.
+    func logServiceState(_ reason: String) {
+        session.getAllTasks { tasks in
+            let running = tasks.filter { $0.state == .running }
+            let receiving = running.filter { $0.countOfBytesReceived > 0 }
+            let bytes = tasks.reduce(Int64(0)) { $0 + $1.countOfBytesReceived }
+            let names = receiving.prefix(4).map { task -> String in
+                let part = DownloadPart.parse(task.taskDescription ?? "").part
+                let total = task.countOfBytesExpectedToReceive > 0 ? " of " + ByteCountFormatter.string(fromByteCount: task.countOfBytesExpectedToReceive, countStyle: .file) : ""
+                return "\(part.logName) \(ByteCountFormatter.string(fromByteCount: task.countOfBytesReceived, countStyle: .file))\(total)"
+            }
+            DownloadDiagnostics.log("\(reason): iOS' download service holds \(tasks.count) transfer(s), \(running.count) running, \(receiving.count) receiving data (\(ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)) so far)\(names.isEmpty ? "" : ": " + names.joined(separator: ", "))")
+        }
+    }
+
+    @ObservationIgnored private var serviceStateTimer: Timer?
+
     @objc private func appDidBecomeActive() {
+        logServiceState("App opened")
+        // Once a minute while the app is open with downloads running.
+        serviceStateTimer?.invalidate()
+        serviceStateTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
+            Task { @MainActor in
+                let manager = DownloadManager.shared
+                guard UIApplication.shared.applicationState == .active, manager.hasActiveDownloads else { return }
+                manager.logServiceState("App open")
+            }
+        }
         // What the downloads were doing while the app was away (for the download log).
         for record in records where record.isActive {
             let live = liveKeys(of: record.id)
@@ -1337,6 +1365,11 @@ final class DownloadManager: NSObject {
         switch part {
         case .initSegment, .segment, .extraInit, .extraSegment:
             let target = part.hlsTarget ?? .video
+            if let n = part.segmentNumber, let hls = hlsProgress(of: records[index], target) {
+                // Every segment, with the one the file waits for, to see the order and pace in the log.
+                let waits = n != hls.nextSegment || !hls.hasInitSegment
+                DownloadDiagnostics.log("\(id): \(label(target, records[index]))segment \(n + 1) received (\(ByteCountFormatter.string(fromByteCount: size, countStyle: .file)))\(waits ? " – kept until segment \(hls.hasInitSegment ? hls.nextSegment + 1 : 0) is in" : "")")
+            }
             if let n = part.segmentNumber, let hls = hlsProgress(of: records[index], target),
                n != hls.nextSegment || !hls.hasInitSegment {
                 // Arrived before the segment in front of it (or before its track's init segment, when
@@ -1648,6 +1681,7 @@ final class DownloadManager: NSObject {
 
     fileprivate func sessionEventsDelivered() {
         eventsDelivered = true
+        logServiceState("Woken by iOS")
         // Before reconnecting, the next queued download can't start yet; iOS suspends the app as soon
         // as the handler is called, so hold it until then.
         if isReconnected || indexUnavailable { callBackgroundCompletion() }

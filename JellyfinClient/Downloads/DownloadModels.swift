@@ -240,6 +240,19 @@ enum DownloadPart: Equatable {
         return .segment(k)
     }
 
+    /// Short name for the download log: "video segment 13", "audio 1 segment 4", "file".
+    var logName: String {
+        switch self {
+        case .original: "file"
+        case .playlist: "segment list"
+        case .initSegment: "video init"
+        case .segment(let k): "video segment \(k + 1)"
+        case .extraInit(let n): "track \(n) init"
+        case .extraSegment(let n, let k): "track \(n) segment \(k + 1)"
+        default: "extra"
+        }
+    }
+
     /// "abc.seg12" → ("abc", .segment(12)); a plain id is the original file.
     static func parse(_ key: String) -> (id: String, part: DownloadPart) {
         guard let dot = key.firstIndex(of: ".") else { return (key, .original) }
