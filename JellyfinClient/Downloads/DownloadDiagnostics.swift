@@ -5,7 +5,7 @@ import SwiftUI
 /// and copyable from the download list, so problems on a real iPhone can be traced.
 enum DownloadDiagnostics {
     private static let queue = DispatchQueue(label: "DownloadDiagnostics")
-    private static let maxLines = 300
+    private static let maxLines = 3000
     nonisolated(unsafe) private static var lines: [String]?
 
     private static var fileURL: URL {
@@ -85,6 +85,10 @@ struct DownloadLogView: View {
                 ToolbarItemGroup(placement: .bottomBar) {
                     Button("Copy", systemImage: "doc.on.doc") {
                         UIPasteboard.general.string = entries.joined(separator: "\n")
+                    }
+                    .disabled(entries.isEmpty)
+                    ShareLink(item: entries.joined(separator: "\n"), subject: Text("Download Log")) {
+                        Label("Share", systemImage: "square.and.arrow.up")
                     }
                     .disabled(entries.isEmpty)
                     Spacer()

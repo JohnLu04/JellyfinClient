@@ -703,7 +703,11 @@ final class DownloadManager: NSObject {
                 records[index].bytesWritten = 0
                 records[index].progress = 0
             }
-            if !quiet { DownloadDiagnostics.log("\(id): starting \(what)\(inApp ? " (in the app, kept running in the background)" : "")") }
+            if !quiet {
+                // Created from the background without the keep-alive: iOS decides when it starts.
+                let deferred = !inApp && UIApplication.shared.applicationState == .background
+                DownloadDiagnostics.log("\(id): starting \(what)\(inApp ? " (in the app, kept running in the background)" : deferred ? " (from the background – iOS decides when it starts)" : "")")
+            }
         }
         task.taskDescription = key
         if let priority { task.priority = priority }
@@ -841,6 +845,12 @@ final class DownloadManager: NSObject {
     }
 
     @objc private func appDidBecomeActive() {
+        // What the downloads were doing while the app was away (for the download log).
+        for record in records where record.isActive {
+            let live = liveKeys(of: record.id)
+            let wait = record.retryAfter.map { " · retry in \(Int(max(0, $0.timeIntervalSinceNow))) s" } ?? ""
+            DownloadDiagnostics.log("App opened: \(record.id) \(record.state.rawValue), \(live.count) transfer(s) running\(wait)\(record.errorMessage.map { " · \($0)" } ?? "")")
+        }
         Self.prepareDirectory()
         retryDeferredIndex()
         inAppBlocked = false

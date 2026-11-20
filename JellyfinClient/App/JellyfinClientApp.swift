@@ -36,6 +36,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
                      completionHandler: @escaping () -> Void) {
         guard identifier == DownloadManager.sessionIdentifier else { return completionHandler() }
         DownloadManager.shared.backgroundCompletionHandler = completionHandler
+        DownloadDiagnostics.log("Woken by iOS: download service events")
     }
 }
 
